@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>📋 請求書管理ダッシュボード</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box }
+body { font-family: 'Noto Sans JP', sans-serif; background: #0a0e1a; color: #e2e8f0; min-height: 100vh }
+.header { background: linear-gradient(135deg, #1e3a5f, #0d2137); padding: 16px; text-align: center; border-bottom: 1px solid rgba(56,189,248,.2) }
+.header h1 { font-size: 17px; font-weight: 900; color: #38bdf8 }
+.user-info { font-size: 11px; color: #64748b; margin-top: 4px }
+.stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; padding: 12px; max-width: 500px; margin: 0 auto }
+.stat-card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 12px; text-align: center }
+.stat-card .num { font-size: 24px; font-weight: 900; color: #38bdf8; margin: 2px 0 }
+.stat-card .label { font-size: 10px; color: #94a3b8 }
+.stat-card.gold .num { color: #fbbf24 }
+.content { padding: 12px; max-width: 500px; margin: 0 auto }
+.tabs { display: flex; gap: 4px; margin-bottom: 10px }
+.tab { flex: 1; padding: 10px; text-align: center; font-size: 11px; font-weight: 700; border-radius: 10px; cursor: pointer; background: #0f172a; color: #64748b; border: 1px solid #1e293b }
+.tab.active { background: #1e3a5f; color: #38bdf8; border-color: #38bdf8 }
+.section { background: #1e293b; border-radius: 12px; padding: 14px; margin-bottom: 10px; border: 1px solid #334155 }
+.section h2 { font-size: 13px; font-weight: 900; color: #38bdf8; margin-bottom: 8px }
+.btn { display: block; width: 100%; border: none; padding: 13px; border-radius: 10px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; color: #fff; margin-bottom: 6px; text-align: center }
+.btn:active { opacity: .8 }
+.btn-primary { background: linear-gradient(135deg, #2563eb, #1d4ed8) }
+.btn-success { background: linear-gradient(135deg, #059669, #047857) }
+.btn-warning { background: linear-gradient(135deg, #d97706, #b45309) }
+.btn-outline { background: transparent; border: 2px solid #334155; color: #94a3b8 }
+.btn:disabled { opacity: .4 }
+.table-wrap { max-height: 280px; overflow: auto; border-radius: 8px; border: 1px solid #334155 }
+table { width: 100%; border-collapse: collapse; font-size: 11px }
+th { background: #0f172a; color: #38bdf8; padding: 7px 5px; text-align: left; position: sticky; top: 0; white-space: nowrap }
+td { padding: 7px 5px; border-bottom: 1px solid #1e293b; white-space: nowrap }
+.log-item { padding: 6px 8px; border-bottom: 1px solid #0f172a; font-size: 10px; line-height: 1.4 }
+.ok { color: #34d399 } .err { color: #f87171 }
+.hidden { display: none }
+.toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #334155; color: #e2e8f0; padding: 10px 20px; border-radius: 10px; font-size: 12px; font-weight: 700; z-index: 100; display: none }
+.spinner { width: 28px; height: 28px; border: 3px solid #334155; border-top: 3px solid #38bdf8; border-radius: 50%; animation: spin .8s linear infinite; margin: 10px auto }
+@keyframes spin { to { transform: rotate(360deg) } }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>📋 請求書管理ダッシュボード</h1>
+  <div class="user-info" id="userInfo"></div>
+</div>
+
+<div class="stats">
+  <div class="stat-card"><div class="label">処理済み</div><div class="num" id="sProcessed">-</div></div>
+  <div class="stat-card gold"><div class="label">合計金額</div><div class="num" id="sAmount">-</div></div>
+  <div class="stat-card"><div class="label">メーカー数</div><div class="num" id="sMakers">-</div></div>
+  <div class="stat-card"><div class="label">最新月</div><div class="num" id="sMonth" style="font-size:16px">-</div></div>
+</div>
+
+<div class="content">
+  <div class="tabs">
+    <div class="tab active" data-tab="overview">📊 概要</div>
+    <div class="tab" data-tab="table">📋 一覧</div>
+    <div class="tab" data-tab="actions">⚡ 操作</div>
+  </div>
+
+  <div id="tab-overview">
+    <div class="section">
+      <h2>📈 月別推移</h2>
+      <div id="chart" style="height:160px;display:flex;align-items:flex-end;gap:3px;padding-top:8px"></div>
+      <div id="chartLabels" style="display:flex;gap:3px;margin-top:3px"></div>
+    </div>
+    <div class="section">
+      <h2>🏆 トップ5</h2>
+      <div id="topMakers"></div>
+    </div>
+  </div>
+
+  <div id="tab-table" class="hidden">
+    <div class="section">
+      <h2>📋 メーカー × 月</h2>
+      <div class="table-wrap" id="tableArea"><div class="spinner"></div></div>
+    </div>
+  </div>
+
+  <div id="tab-actions" class="hidden">
+    <div class="section">
+      <h2>⚡ 手動操作</h2>
+      <button class="btn btn-primary" id="btnProcess">▶️ 今すぐ処理実行</button>
+      <button class="btn btn-outline" id="btnSheet">📊 スプレッドシートを開く</button>
+    </div>
+    <div class="section">
+      <h2>👤 アカウント</h2>
+      <button class="btn btn-outline" onclick="document.cookie='inv_session=;Path=/;Max-Age=0';location.href='/'">🚪 ログアウト</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// タブ切替
+document.querySelectorAll('.tab').forEach(function(t) {
+  t.addEventListener('click', function() {
+    document.querySelectorAll('.tab').forEach(function(x) { x.classList.remove('active'); });
+    t.classList.add('active');
+    ['overview','table','actions'].forEach(function(n) {
+      document.getElementById('tab-' + n).classList.toggle('hidden', n !== t.getAttribute('data-tab'));
+    });
+  });
+});
+
+function showToast(msg) {
+  var t = document.getElementById('toast'); t.textContent = msg; t.style.display = 'block';
+  setTimeout(function() { t.style.display = 'none'; }, 3000);
+}
+
+var sheetUrl = '';
+
+function loadData() {
+  fetch('/api/data').then(function(r) {
+    if (r.status === 401) { location.href = '/'; return; }
+    return r.json();
+  }).then(function(d) {
+    if (!d) return;
+    if (d.user) document.getElementById('userInfo').textContent = d.user.name + ' (' + d.user.email + ')';
+    if (d.sheetUrl) sheetUrl = d.sheetUrl;
+    document.getElementById('sProcessed').textContent = d.totalProcessed || 0;
+    document.getElementById('sAmount').textContent = '¥' + (d.totalAmount || 0).toLocaleString();
+    document.getElementById('sMakers').textContent = d.totalMakers || 0;
+    document.getElementById('sMonth').textContent = d.latestMonth || '-';
+    renderChart(d.monthly || []);
+    renderTop(d.topMakers || []);
+    renderTable(d.tableData || []);
+  }).catch(function() { showToast('データ取得失敗'); });
+}
+
+function renderChart(monthly) {
+  var c = document.getElementById('chart'), l = document.getElementById('chartLabels');
+  c.innerHTML = ''; l.innerHTML = '';
+  if (!monthly.length) { c.innerHTML = '<div style="color:#64748b;font-size:11px;margin:auto">データなし</div>'; return; }
+  var max = Math.max.apply(null, monthly.map(function(m) { return m.amount; })) || 1;
+  monthly.forEach(function(m) {
+    var h = Math.max((m.amount / max) * 140, 3);
+    var bar = document.createElement('div');
+    bar.style.cssText = 'flex:1;background:linear-gradient(180deg,#38bdf8,#0284c7);border-radius:4px 4px 0 0;height:' + h + 'px;min-width:16px';
+    bar.title = m.month + ': ¥' + m.amount.toLocaleString();
+    c.appendChild(bar);
+    var lb = document.createElement('div');
+    lb.style.cssText = 'flex:1;text-align:center;font-size:8px;color:#64748b;min-width:16px';
+    lb.textContent = m.month.split('/')[1] + '月';
+    l.appendChild(lb);
+  });
+}
+
+function renderTop(makers) {
+  var d = document.getElementById('topMakers'); d.innerHTML = '';
+  if (!makers.length) { d.innerHTML = '<div style="color:#64748b;font-size:11px">データなし</div>'; return; }
+  var icons = ['🥇','🥈','🥉','4️⃣','5️⃣'];
+  makers.forEach(function(m, i) {
+    var r = document.createElement('div');
+    r.style.cssText = 'display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid #0f172a;font-size:12px';
+    r.innerHTML = '<span style="width:22px;text-align:center">' + icons[i] + '</span><span style="flex:1;font-weight:700">' + m.name + '</span><span style="color:#fbbf24;font-weight:900">¥' + m.amount.toLocaleString() + '</span>';
+    d.appendChild(r);
+  });
+}
+
+function renderTable(data) {
+  var w = document.getElementById('tableArea'); w.innerHTML = '';
+  if (!data || data.length < 2) { w.innerHTML = '<div style="color:#64748b;font-size:11px;padding:16px;text-align:center">データなし</div>'; return; }
+  var t = document.createElement('table');
+  var thead = '<thead><tr>' + data[0].map(function(h) { return '<th>' + (h || '') + '</th>'; }).join('') + '</tr></thead>';
+  var tbody = '<tbody>' + data.slice(1).map(function(row) {
+    return '<tr>' + data[0].map(function(_, c) {
+      var v = (row[c] !== undefined && row[c] !== null) ? row[c] : '';
+      if (c > 0 && typeof v === 'number' && v > 0) return '<td style="color:#34d399;font-weight:700">¥' + v.toLocaleString() + '</td>';
+      return '<td>' + v + '</td>';
+    }).join('') + '</tr>';
+  }).join('') + '</tbody>';
+  t.innerHTML = thead + tbody;
+  w.appendChild(t);
+}
+
+document.getElementById('btnProcess').addEventListener('click', function() {
+  if (!confirm('未処理の請求書を今すぐ処理しますか？')) return;
+  showToast('⏳ 処理中...');
+  this.disabled = true;
+  var btn = this;
+  fetch('/api/process', { method: 'POST' }).then(function(r) { return r.json(); }).then(function(d) {
+    showToast('✅ ' + (d.message || '完了'));
+    btn.disabled = false;
+    loadData();
+  }).catch(function() { showToast('❌ エラー'); btn.disabled = false; });
+});
+
+document.getElementById('btnSheet').addEventListener('click', function() {
+  if (sheetUrl) window.open(sheetUrl, '_blank');
+  else showToast('スプレッドシートがまだありません');
+});
+
+loadData();
+</script>
+</body>
+</html>

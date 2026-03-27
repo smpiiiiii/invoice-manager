@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>📋 請求書管理ダッシュボード</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&family=Noto+Sans+JP:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box }
+body { font-family: 'Noto Sans JP', 'Inter', sans-serif; background: #0a0e1a; color: #e2e8f0; min-height: 100vh }
+
+/* ヘッダー */
+.header { background: linear-gradient(135deg, #1e3a5f, #0d2137); padding: 20px 16px; text-align: center; border-bottom: 1px solid rgba(56,189,248,.2) }
+.header h1 { font-size: 18px; font-weight: 900; color: #38bdf8 }
+.header .sub { font-size: 11px; color: #64748b; margin-top: 4px }
+
+/* 統計カード */
+.stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; padding: 12px; max-width: 500px; margin: 0 auto }
+.stat-card { background: linear-gradient(135deg, #1e293b, #0f172a); border: 1px solid #334155; border-radius: 14px; padding: 14px; text-align: center }
+.stat-card .num { font-size: 28px; font-weight: 900; color: #38bdf8; margin: 4px 0 }
+.stat-card .label { font-size: 11px; color: #94a3b8 }
+.stat-card.highlight { border-color: #f59e0b; background: linear-gradient(135deg, #1c1917, #1a1508) }
+.stat-card.highlight .num { color: #fbbf24 }
+.stat-card.warn .num { color: #f87171 }
+
+/* コンテンツ */
+.content { padding: 12px; max-width: 500px; margin: 0 auto }
+
+/* セクション */
+.section { background: #1e293b; border-radius: 14px; padding: 16px; margin-bottom: 12px; border: 1px solid #334155 }
+.section h2 { font-size: 14px; font-weight: 900; color: #38bdf8; margin-bottom: 10px }
+
+/* ボタン */
+.btn { display: block; width: 100%; border: none; padding: 14px; border-radius: 12px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; color: #fff; margin-bottom: 8px; text-align: center }
+.btn:active { opacity: .8; transform: scale(.98) }
+.btn-primary { background: linear-gradient(135deg, #2563eb, #1d4ed8) }
+.btn-success { background: linear-gradient(135deg, #059669, #047857) }
+.btn-warning { background: linear-gradient(135deg, #d97706, #b45309) }
+.btn-outline { background: transparent; border: 2px solid #334155; color: #94a3b8 }
+.btn-danger { background: linear-gradient(135deg, #dc2626, #b91c1c) }
+.btn:disabled { opacity: .5; cursor: not-allowed }
+
+/* テーブル */
+.data-table { width: 100%; border-collapse: collapse; font-size: 12px; overflow-x: auto; display: block }
+.data-table th { background: #0f172a; color: #38bdf8; padding: 8px 6px; text-align: left; font-size: 11px; position: sticky; top: 0; white-space: nowrap }
+.data-table td { padding: 8px 6px; border-bottom: 1px solid #1e293b; white-space: nowrap }
+.data-table tr:hover td { background: rgba(56,189,248,.05) }
+.table-wrap { max-height: 300px; overflow: auto; border-radius: 10px; border: 1px solid #334155 }
+
+/* ログ */
+.log-item { padding: 8px 10px; border-bottom: 1px solid #0f172a; font-size: 11px; line-height: 1.5 }
+.log-item:last-child { border-bottom: none }
+.log-item .status { font-weight: 700 }
+.log-item .status.ok { color: #34d399 }
+.log-item .status.err { color: #f87171 }
+
+/* ローディング */
+.loading { text-align: center; padding: 20px; color: #64748b }
+.spinner { width: 32px; height: 32px; border: 3px solid #334155; border-top: 3px solid #38bdf8; border-radius: 50%; animation: spin .8s linear infinite; margin: 0 auto 8px }
+@keyframes spin { to { transform: rotate(360deg) } }
+
+/* トースト */
+.toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #334155; color: #e2e8f0; padding: 10px 20px; border-radius: 10px; font-size: 13px; font-weight: 700; z-index: 100; display: none; animation: fadeIn .3s }
+@keyframes fadeIn { from { opacity: 0; transform: translateX(-50%) translateY(10px) } }
+
+/* タブ */
+.tabs { display: flex; gap: 4px; margin-bottom: 12px; overflow-x: auto }
+.tab { flex: 1; padding: 10px; text-align: center; font-size: 12px; font-weight: 700; border-radius: 10px; cursor: pointer; background: #0f172a; color: #64748b; border: 1px solid #1e293b; white-space: nowrap; min-width: 80px }
+.tab.active { background: #1e3a5f; color: #38bdf8; border-color: #38bdf8 }
+
+.hidden { display: none }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>📋 請求書管理ダッシュボード</h1>
+  <div class="sub">自動処理 & リアルタイム確認</div>
+</div>
+
+<!-- 統計 -->
+<div class="stats" id="statsArea">
+  <div class="stat-card">
+    <div class="label">処理済み</div>
+    <div class="num" id="totalProcessed">-</div>
+  </div>
+  <div class="stat-card highlight">
+    <div class="label">合計金額</div>
+    <div class="num" id="totalAmount">-</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">メーカー数</div>
+    <div class="num" id="totalMakers">-</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">最新月</div>
+    <div class="num" id="latestMonth" style="font-size:18px">-</div>
+  </div>
+</div>
+
+<div class="content">
+  <!-- タブ -->
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('overview')">📊 概要</div>
+    <div class="tab" onclick="switchTab('table')">📋 一覧表</div>
+    <div class="tab" onclick="switchTab('logs')">📝 ログ</div>
+    <div class="tab" onclick="switchTab('actions')">⚡ 操作</div>
+  </div>
+
+  <!-- 概要タブ -->
+  <div id="tab-overview">
+    <div class="section">
+      <h2>📈 月別推移</h2>
+      <div id="monthlyChart" style="height:200px;display:flex;align-items:flex-end;gap:4px;padding-top:10px"></div>
+      <div id="monthlyLabels" style="display:flex;gap:4px;margin-top:4px"></div>
+    </div>
+    <div class="section">
+      <h2>🏆 トップ5 メーカー</h2>
+      <div id="topMakers"></div>
+    </div>
+  </div>
+
+  <!-- 一覧表タブ -->
+  <div id="tab-table" class="hidden">
+    <div class="section">
+      <h2>📋 メーカー × 月 一覧</h2>
+      <div class="table-wrap" id="tableArea">
+        <div class="loading"><div class="spinner"></div>読み込み中...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ログタブ -->
+  <div id="tab-logs" class="hidden">
+    <div class="section">
+      <h2>📝 処理ログ（最新20件）</h2>
+      <div id="logArea">
+        <div class="loading"><div class="spinner"></div>読み込み中...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 操作タブ -->
+  <div id="tab-actions" class="hidden">
+    <div class="section">
+      <h2>⚡ 手動操作</h2>
+      <button class="btn btn-primary" id="btnProcess" onclick="runProcess()">▶️ 今すぐ処理実行</button>
+      <button class="btn btn-success" id="btnTest" onclick="runTest()">🧪 テスト（1件だけ）</button>
+      <button class="btn btn-warning" id="btnSetup" onclick="runSetup()">⏰ 月次トリガー設定</button>
+      <button class="btn btn-outline" id="btnRemove" onclick="runRemove()">🗑 トリガー解除</button>
+      <button class="btn btn-danger" id="btnReset" onclick="runReset()">🔄 ラベルリセット</button>
+    </div>
+    <div class="section">
+      <h2>📎 リンク</h2>
+      <button class="btn btn-outline" onclick="openSheet()">📊 スプレッドシートを開く</button>
+      <button class="btn btn-outline" onclick="openDrive()">📁 Driveフォルダを開く</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// === タブ切替 ===
+function switchTab(name) {
+  var tabs = document.querySelectorAll('.tab');
+  for (var i = 0; i < tabs.length; i++) tabs[i].classList.remove('active');
+  event.target.classList.add('active');
+
+  var panels = ['overview', 'table', 'logs', 'actions'];
+  for (var j = 0; j < panels.length; j++) {
+    document.getElementById('tab-' + panels[j]).classList.toggle('hidden', panels[j] !== name);
+  }
+}
+
+// === トースト ===
+function showToast(msg) {
+  var t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.display = 'block';
+  setTimeout(function() { t.style.display = 'none'; }, 3000);
+}
+
+// === データ読み込み ===
+function loadDashboard() {
+  google.script.run.withSuccessHandler(function(data) {
+    if (!data) { showToast('データ取得失敗'); return; }
+    renderStats(data);
+    renderChart(data);
+    renderTopMakers(data);
+    renderTable(data);
+  }).withFailureHandler(function(e) {
+    showToast('エラー: ' + e.message);
+  }).getDashboardData();
+
+  // ログ取得
+  google.script.run.withSuccessHandler(function(logs) {
+    renderLogs(logs);
+  }).withFailureHandler(function() {}).getRecentLogs();
+}
+
+// === 統計レンダリング ===
+function renderStats(data) {
+  document.getElementById('totalProcessed').textContent = data.totalProcessed || 0;
+  document.getElementById('totalAmount').textContent = '¥' + (data.totalAmount || 0).toLocaleString();
+  document.getElementById('totalMakers').textContent = data.totalMakers || 0;
+  document.getElementById('latestMonth').textContent = data.latestMonth || '-';
+}
+
+// === チャート ===
+function renderChart(data) {
+  var chart = document.getElementById('monthlyChart');
+  var labels = document.getElementById('monthlyLabels');
+  chart.innerHTML = ''; labels.innerHTML = '';
+  if (!data.monthly || data.monthly.length === 0) { chart.innerHTML = '<div style="color:#64748b;font-size:12px;margin:auto">データなし</div>'; return; }
+
+  var max = 0;
+  for (var i = 0; i < data.monthly.length; i++) { if (data.monthly[i].amount > max) max = data.monthly[i].amount; }
+  if (max === 0) max = 1;
+
+  for (var j = 0; j < data.monthly.length; j++) {
+    var m = data.monthly[j];
+    var h = Math.max((m.amount / max) * 180, 4);
+    var bar = document.createElement('div');
+    bar.style.cssText = 'flex:1;background:linear-gradient(180deg,#38bdf8,#0284c7);border-radius:6px 6px 0 0;height:' + h + 'px;min-width:20px;position:relative;cursor:pointer';
+    bar.title = m.month + ': ¥' + m.amount.toLocaleString();
+    chart.appendChild(bar);
+
+    var lbl = document.createElement('div');
+    lbl.style.cssText = 'flex:1;text-align:center;font-size:9px;color:#64748b;min-width:20px';
+    lbl.textContent = m.month.split('/')[1] + '月';
+    labels.appendChild(lbl);
+  }
+}
+
+// === トップメーカー ===
+function renderTopMakers(data) {
+  var div = document.getElementById('topMakers');
+  div.innerHTML = '';
+  if (!data.topMakers || data.topMakers.length === 0) { div.innerHTML = '<div style="color:#64748b;font-size:12px">データなし</div>'; return; }
+
+  for (var i = 0; i < data.topMakers.length; i++) {
+    var m = data.topMakers[i];
+    var row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #0f172a';
+    var rank = document.createElement('span');
+    rank.style.cssText = 'font-size:16px;width:28px;text-align:center';
+    rank.textContent = ['🥇','🥈','🥉','4⃣','5⃣'][i];
+    var info = document.createElement('div');
+    info.style.cssText = 'flex:1;font-size:13px;font-weight:700';
+    info.textContent = m.name;
+    var amt = document.createElement('span');
+    amt.style.cssText = 'font-size:13px;color:#fbbf24;font-weight:900';
+    amt.textContent = '¥' + m.amount.toLocaleString();
+    row.appendChild(rank); row.appendChild(info); row.appendChild(amt);
+    div.appendChild(row);
+  }
+}
+
+// === テーブル ===
+function renderTable(data) {
+  var wrap = document.getElementById('tableArea');
+  if (!data.tableData || data.tableData.length === 0) { wrap.innerHTML = '<div style="color:#64748b;font-size:12px;padding:20px;text-align:center">データなし</div>'; return; }
+
+  var table = document.createElement('table');
+  table.className = 'data-table';
+  var thead = document.createElement('thead');
+  var headerRow = document.createElement('tr');
+  for (var h = 0; h < data.tableData[0].length; h++) {
+    var th = document.createElement('th');
+    th.textContent = data.tableData[0][h] || '';
+    headerRow.appendChild(th);
+  }
+  thead.appendChild(headerRow);
+  table.appendChild(thead);
+
+  var tbody = document.createElement('tbody');
+  for (var r = 1; r < data.tableData.length; r++) {
+    var tr = document.createElement('tr');
+    for (var c = 0; c < data.tableData[r].length; c++) {
+      var td = document.createElement('td');
+      var v = data.tableData[r][c];
+      if (c > 0 && typeof v === 'number' && v > 0) {
+        td.textContent = '¥' + v.toLocaleString();
+        td.style.color = '#34d399';
+        td.style.fontWeight = '700';
+      } else {
+        td.textContent = v || '';
+      }
+      tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
+  wrap.innerHTML = '';
+  wrap.appendChild(table);
+}
+
+// === ログ ===
+function renderLogs(logs) {
+  var div = document.getElementById('logArea');
+  div.innerHTML = '';
+  if (!logs || logs.length === 0) { div.innerHTML = '<div style="color:#64748b;font-size:12px;padding:10px">ログなし</div>'; return; }
+
+  for (var i = 0; i < logs.length; i++) {
+    var l = logs[i];
+    var item = document.createElement('div');
+    item.className = 'log-item';
+    var isOk = l.status && l.status.indexOf('成功') >= 0;
+    item.innerHTML = '<span class="status ' + (isOk ? 'ok' : 'err') + '">' + (l.status || '') + '</span> ' +
+      '<span style="color:#94a3b8">' + (l.date || '') + '</span><br>' +
+      '<span>' + (l.maker || '') + '</span> ' +
+      (l.amount > 0 ? '<span style="color:#fbbf24">¥' + l.amount.toLocaleString() + '</span>' : '') +
+      ' <span style="color:#64748b;font-size:10px">' + (l.subject || '').substring(0, 30) + '</span>';
+    div.appendChild(item);
+  }
+}
+
+// === アクション ===
+function runProcess() {
+  if (!confirm('未処理の請求書メールを一括処理しますか？')) return;
+  showToast('⏳ 処理中...');
+  document.getElementById('btnProcess').disabled = true;
+  google.script.run.withSuccessHandler(function(r) {
+    showToast('✅ ' + r);
+    document.getElementById('btnProcess').disabled = false;
+    loadDashboard();
+  }).withFailureHandler(function(e) {
+    showToast('❌ ' + e.message);
+    document.getElementById('btnProcess').disabled = false;
+  }).runProcessFromDashboard();
+}
+
+function runTest() {
+  showToast('🧪 テスト中...');
+  google.script.run.withSuccessHandler(function(r) {
+    showToast('✅ ' + r);
+    loadDashboard();
+  }).withFailureHandler(function(e) { showToast('❌ ' + e.message); }).runTestFromDashboard();
+}
+
+function runSetup() {
+  google.script.run.withSuccessHandler(function() { showToast('⏰ トリガー設定完了'); }).setupTrigger();
+}
+
+function runRemove() {
+  google.script.run.withSuccessHandler(function() { showToast('🗑 トリガー解除完了'); }).removeTrigger();
+}
+
+function runReset() {
+  if (!confirm('処理済みラベルをリセットしますか？\n全メールが再処理対象になります。')) return;
+  google.script.run.withSuccessHandler(function() { showToast('🔄 リセット完了'); }).resetProcessedLabel();
+}
+
+function openSheet() {
+  google.script.run.withSuccessHandler(function(url) {
+    if (url) window.open(url, '_blank');
+    else showToast('スプレッドシートが見つかりません');
+  }).getSheetUrl();
+}
+
+function openDrive() {
+  google.script.run.withSuccessHandler(function(url) {
+    if (url) window.open(url, '_blank');
+    else showToast('フォルダが見つかりません');
+  }).getDriveUrl();
+}
+
+// 初期読み込み
+loadDashboard();
+</script>
+</body>
+</html>

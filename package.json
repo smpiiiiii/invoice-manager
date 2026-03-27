@@ -1,0 +1,10 @@
+{
+  "name": "invoice-manager",
+  "version": "1.0.0",
+  "description": "請求書自動管理システム",
+  "private": true,
+  "dependencies": {
+    "googleapis": "^131.0.0",
+    "cookie": "^0.6.0"
+  }
+}
