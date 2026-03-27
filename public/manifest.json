@@ -1,0 +1,12 @@
+{
+  "name": "請求書管理",
+  "short_name": "請求書",
+  "description": "請求書自動管理ダッシュボード",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0e1a",
+  "theme_color": "#0a0e1a",
+  "icons": [
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
