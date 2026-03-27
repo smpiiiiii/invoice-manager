@@ -11,7 +11,7 @@
 // ===== 必須設定 =====
 
 /** Gemini API Key（Google AI Studio: https://aistudio.google.com/apikey で取得） */
-var GEMINI_API_KEY = 'AIzaSyCUJVx-Cqf97RW_GRfOKOsHlKuYatJRC6Y';
+var GEMINI_API_KEY = 'YOUR_API_KEY_HERE';
 
 /** Gemini API URL */
 var GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/';
