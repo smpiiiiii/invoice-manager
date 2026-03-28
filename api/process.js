@@ -41,10 +41,11 @@ module.exports = async (req, res) => {
     const gmailRes = await googleApi(token,
       `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=10`
     );
+    const totalRemaining = gmailRes.resultSizeEstimate || 0;
 
     const messageIds = (gmailRes.messages || []).map(m => m.id);
     if (messageIds.length === 0) {
-      return res.json({ success: true, message: `新しい${modeLabel}メールはありません`, processed: 0, errors: 0, debug: { query, found: 0 } });
+      return res.json({ success: true, message: `新しい${modeLabel}メールはありません`, processed: 0, errors: 0, debug: { query, found: 0, totalRemaining: 0 } });
     }
 
     // 処理済みラベルを取得or作成
@@ -83,7 +84,8 @@ module.exports = async (req, res) => {
         const fromAddr = getHeader(msg, 'From') || '';
         const attachParts = getDocAttachments(msg);
 
-        const logEntry = { subject: subject.substring(0, 60), from: fromAddr.substring(0, 40), attachments: attachParts.length, status: '' };
+        const dateStr = mailDate.getFullYear() + '/' + String(mailDate.getMonth() + 1).padStart(2, '0') + '/' + String(mailDate.getDate()).padStart(2, '0');
+        const logEntry = { subject: subject.substring(0, 60), from: fromAddr.substring(0, 40), date: dateStr, attachments: attachParts.length, status: '' };
         let hasProcessedSomething = false;
         let hitRateLimit = false;
 
@@ -163,7 +165,7 @@ module.exports = async (req, res) => {
       }
     }
 
-    res.json({ success: true, message: `処理完了: ${processed}件成功, ${errors}件エラー`, processed, errors, results, debug: { query, found: messageIds.length, logs: debugLogs } });
+    res.json({ success: true, message: `処理完了: ${processed}件成功, ${errors}件エラー`, processed, errors, results, debug: { query, found: messageIds.length, totalRemaining, logs: debugLogs } });
   } catch (e) {
     console.error('処理エラー:', e);
     res.status(500).json({ error: e.message });

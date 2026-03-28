@@ -242,23 +242,30 @@ function renderTable(data) {
 }
 
 // 処理実行
+var batchOffset = 0; // 累計カウンター
 document.getElementById('btnProcess').addEventListener('click', function() {
   var label = currentMode === 'receipt' ? '領収書' : '請求書';
   showToast('⏳ ' + label + '処理中...');
   this.disabled = true;
   var btn = this;
   var debugDiv = document.getElementById('debugArea');
-  if (debugDiv) debugDiv.innerHTML = '<div class="spinner"></div>';
+  if (debugDiv) debugDiv.innerHTML = '<div class="spinner"></div><div style="color:#94a3b8;text-align:center;font-size:12px;margin-top:8px">処理中... ' + (batchOffset + 1) + '件目〜</div>';
   fetch('/api/process', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ mode: currentMode })
   }).then(function(r) { return r.json(); }).then(function(d) {
+    var found = (d.debug && d.debug.found) || 0;
+    var remaining = (d.debug && d.debug.totalRemaining) || 0;
+    var rangeStart = batchOffset + 1;
+    var rangeEnd = batchOffset + found;
+    batchOffset += found;
     showToast('✅ ' + (d.message || '完了'));
     btn.disabled = false;
     loadData();
     if (d.debug && debugDiv) {
-      var html = '<h2 style="font-size:13px;color:#38bdf8;margin-bottom:8px">📊 処理結果 (' + (d.processed || 0) + '/' + (d.debug.found || 0) + '件成功)</h2>';
+      var html = '<h2 style="font-size:13px;color:#38bdf8;margin-bottom:4px">📊 処理結果 (' + (d.processed || 0) + '/' + found + '件成功)</h2>';
+      html += '<div style="font-size:11px;color:#94a3b8;margin-bottom:8px">📬 ' + rangeStart + '〜' + rangeEnd + '件目 ｜ 残り約' + Math.max(remaining - found, 0) + '件</div>';
       if (d.debug.logs && d.debug.logs.length > 0) {
         d.debug.logs.forEach(function(l, i) {
           var statusColor = '#64748b';
@@ -266,7 +273,10 @@ document.getElementById('btnProcess').addEventListener('click', function() {
           if (l.status && l.status.includes('⚠️')) statusColor = '#f59e0b';
           if (l.status && l.status.includes('❌')) statusColor = '#f87171';
           html += '<div class="log-item" style="border-left:3px solid ' + statusColor + ';padding-left:8px;margin-bottom:6px">';
-          html += '<div style="color:#e2e8f0;font-weight:600;font-size:11px">' + (l.subject || '不明') + '</div>';
+          html += '<div style="display:flex;justify-content:space-between;align-items:center">';
+          html += '<div style="color:#e2e8f0;font-weight:600;font-size:11px;flex:1">' + (l.subject || '不明') + '</div>';
+          if (l.date) html += '<div style="color:#64748b;font-size:10px;white-space:nowrap;margin-left:8px">📅 ' + l.date + '</div>';
+          html += '</div>';
           html += '<div style="color:' + statusColor + ';font-size:12px;font-weight:700">' + (l.status || '-') + '</div>';
           html += '</div>';
         });
@@ -298,6 +308,7 @@ document.getElementById('btnReset').addEventListener('click', function() {
     body: JSON.stringify({ mode: currentMode })
   }).then(function(r) { return r.json(); }).then(function(d) {
     showToast('✅ ' + (d.message || '完了'));
+    batchOffset = 0;
     btn.disabled = false;
     loadData();
   }).catch(function() { showToast('❌ エラー'); btn.disabled = false; });
