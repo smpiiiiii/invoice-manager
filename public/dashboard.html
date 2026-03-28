@@ -182,7 +182,7 @@ function renderModeData(data) {
 }
 
 function loadData() {
-  fetch('/api/data').then(function(r) {
+  fetch('/api/data?t=' + Date.now()).then(function(r) {
     if (r.status === 401) { location.href = '/api/auth/login'; return; }
     return r.json();
   }).then(function(d) {

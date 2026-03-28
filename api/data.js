@@ -6,6 +6,8 @@
 const { getSession, refreshTokenIfNeeded, googleApi } = require('./helpers');
 
 module.exports = async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
   let session = getSession(req);
   if (!session) return res.status(401).json({ error: 'ログインが必要です' });
   session = await refreshTokenIfNeeded(session);
