@@ -6,6 +6,9 @@
  */
 const { getSession, refreshTokenIfNeeded, googleApi } = require('./helpers');
 
+// Vercelタイムアウトを60秒に延長
+module.exports.maxDuration = 60;
+
 module.exports = async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
@@ -55,13 +58,13 @@ module.exports = async (req, res) => {
     const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
     // 429リトライ付きGemini呼び出し
-    async function callGeminiWithRetry(fn, maxRetries = 2) {
+    async function callGeminiWithRetry(fn, maxRetries = 1) {
       for (let attempt = 0; attempt <= maxRetries; attempt++) {
-        await sleep(3000); // 呼び出し前に3秒待機
+        await sleep(1000); // 呼び出し前に1秒待機
         const result = await fn();
         if (result && result._error && result._error.includes('429')) {
-          console.log(`429エラー、${10 * (attempt + 1)}秒待機してリトライ (${attempt + 1}/${maxRetries})`);
-          await sleep(10000 * (attempt + 1)); // 10秒、20秒と増やす
+          console.log(`429エラー、${5 * (attempt + 1)}秒待機してリトライ`);
+          await sleep(5000 * (attempt + 1));
           continue;
         }
         return result;
@@ -218,7 +221,7 @@ function extractEmailBody(msg) {
  * メール本文テキストをGeminiで解析して領収書情報を抽出
  */
 async function analyzeBodyWithGemini(apiKey, subject, fromAddr, bodyText) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
   const prompt = `以下はメールの件名・差出人・本文です。これが購入・注文・決済・領収に関するメールかどうか判定し、該当する場合は情報を抽出してください。
 
 件名: ${subject}
@@ -375,7 +378,7 @@ async function uploadToDrive(token, folderId, fileName, base64Data, mimeType = '
 }
 
 async function analyzeWithGemini(apiKey, fileBase64, mimeType = 'application/pdf', mode = 'invoice') {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
 
   // モードに応じたプロンプト
   const prompt = mode === 'receipt'
