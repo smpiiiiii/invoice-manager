@@ -99,6 +99,11 @@ td { padding: 7px 5px; border-bottom: 1px solid #1e293b; white-space: nowrap }
       <button class="btn btn-outline" id="btnSheet">📊 スプレッドシートを開く</button>
     </div>
     <div class="section">
+      <h2>🔧 メンテナンス</h2>
+      <button class="btn btn-warning" id="btnReset">🔄 処理済みラベルをリセット</button>
+      <div style="font-size:10px;color:#64748b;margin:-2px 0 6px;text-align:center">同じメールを再処理したい場合に使用</div>
+    </div>
+    <div class="section">
       <h2>👤 アカウント</h2>
       <button class="btn btn-outline" onclick="document.cookie='inv_session=;Path=/;Max-Age=0';location.href='/api/auth/login'">🚪 ログアウト</button>
     </div>
@@ -222,6 +227,22 @@ document.getElementById('btnProcess').addEventListener('click', function() {
 document.getElementById('btnSheet').addEventListener('click', function() {
   if (sheetUrl) window.open(sheetUrl, '_blank');
   else showToast('スプレッドシートがまだありません');
+});
+
+document.getElementById('btnReset').addEventListener('click', function() {
+  var label = currentMode === 'receipt' ? '領収書' : '請求書';
+  if (!confirm(label + 'の処理済みラベルをリセットしますか？\n同じメールが再度処理されます。')) return;
+  showToast('🔄 リセット中...');
+  this.disabled = true;
+  var btn = this;
+  fetch('/api/reset-labels', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode: currentMode })
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    showToast('✅ ' + (d.message || '完了'));
+    btn.disabled = false;
+  }).catch(function() { showToast('❌ エラー'); btn.disabled = false; });
 });
 
 loadData();
