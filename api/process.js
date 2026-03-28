@@ -29,10 +29,10 @@ module.exports = async (req, res) => {
     // 2. Gmail検索（モード別クエリ）
     let query;
     if (mode === 'receipt') {
-      // 領収書モード: 添付付き + 本文に領収書/注文/購入系キーワードがあるメール
-      query = `-label:${processedLabel} after:2026/03/01 {has:attachment (filename:pdf OR filename:png OR filename:jpg OR filename:jpeg) subject:(領収書 OR 領収 OR 注文確認 OR 購入 OR ご利用明細 OR receipt OR order)}`;
+      // 領収書モード: 添付付きメール + 購入系キーワードメールをすべて拾い、Geminiが判定
+      query = `-label:${processedLabel} after:2026/03/01 (has:attachment OR subject:領収 OR subject:注文 OR subject:購入 OR subject:receipt OR subject:order)`;
     } else {
-      // 請求書モード: 添付ファイルがあるメール
+      // 請求書モード: PDF/PNG/JPG添付があるメール
       query = `has:attachment (filename:pdf OR filename:png OR filename:jpg OR filename:jpeg) -label:${processedLabel} after:2026/03/01`;
     }
     const gmailRes = await googleApi(token,
