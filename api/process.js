@@ -370,14 +370,19 @@ async function analyzeWithGemini(apiKey, fileBase64, mimeType = 'application/pdf
     body: JSON.stringify(payload)
   });
 
-  if (!gemRes.ok) return null;
+  if (!gemRes.ok) {
+    const errText = await gemRes.text();
+    return { _error: `API ${gemRes.status}: ${errText.substring(0, 200)}`, _keyPrefix: apiKey ? apiKey.substring(0, 8) + '...' : 'MISSING' };
+  }
   const data = await gemRes.json();
   try {
     let text = data.candidates[0].content.parts[0].text;
     text = text.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
     const result = JSON.parse(text);
     return { makerName: result.makerName ? String(result.makerName).trim() : null, amount: parseInt(result.amount) || 0 };
-  } catch (e) { return null; }
+  } catch (e) {
+    return { _error: `Parse: ${e.message}`, _raw: JSON.stringify(data).substring(0, 300) };
+  }
 }
 
 async function updateSheet(token, sheetId, makerName, amount, yearMonth) {
