@@ -41,7 +41,7 @@ module.exports = async (req, res) => {
 
     const messageIds = (gmailRes.messages || []).map(m => m.id);
     if (messageIds.length === 0) {
-      return res.json({ success: true, message: `新しい${modeLabel}メールはありません`, processed: 0, errors: 0 });
+      return res.json({ success: true, message: `新しい${modeLabel}メールはありません`, processed: 0, errors: 0, debug: { query, found: 0 } });
     }
 
     // 処理済みラベルを取得or作成
@@ -49,6 +49,7 @@ module.exports = async (req, res) => {
 
     let processed = 0, errors = 0;
     const results = [];
+    const debugLogs = [];
 
     for (const msgId of messageIds) {
       try {
@@ -64,6 +65,8 @@ module.exports = async (req, res) => {
 
         // 添付ファイルを抽出（PDF/PNG/JPG）
         const attachParts = getDocAttachments(msg);
+
+        const debugEntry = { subject: subject.substring(0, 50), from: fromAddr.substring(0, 40), attachments: attachParts.length, result: '' };
 
         let hasProcessedSomething = false;
 
@@ -83,6 +86,7 @@ module.exports = async (req, res) => {
 
           // Gemini解析
           const analysis = await analyzeWithGemini(geminiKey, fileBase64, mimeType, mode);
+          debugEntry.result = `添付(${part.filename}): ${JSON.stringify(analysis)}`;
 
           if (analysis && analysis.makerName && analysis.amount > 0) {
             await updateSheet(token, sheetId, analysis.makerName, analysis.amount, yearMonth);
@@ -99,18 +103,23 @@ module.exports = async (req, res) => {
         // B. 領収書モード: 添付なし or 添付から見つからなかった場合、メール本文を解析
         if (mode === 'receipt' && !hasProcessedSomething) {
           const bodyText = extractEmailBody(msg);
+          debugEntry.bodyLength = bodyText ? bodyText.length : 0;
           if (bodyText && bodyText.length > 20) {
             const analysis = await analyzeBodyWithGemini(geminiKey, subject, fromAddr, bodyText);
+            debugEntry.result = `本文解析: ${JSON.stringify(analysis)}`;
             if (analysis && analysis.makerName && analysis.amount > 0) {
               await updateSheet(token, sheetId, analysis.makerName, analysis.amount, yearMonth);
               results.push({ maker: analysis.makerName, amount: analysis.amount, month: yearMonth, source: 'メール本文' });
               processed++;
               hasProcessedSomething = true;
             }
+          } else {
+            debugEntry.result = '本文が短すぎてスキップ';
           }
         }
 
         if (!hasProcessedSomething && attachParts.length > 0) errors++;
+        debugLogs.push(debugEntry);
 
         // 処理済みラベルを付与
         await googleApi(token,
@@ -119,11 +128,12 @@ module.exports = async (req, res) => {
         );
       } catch (e) {
         console.error('メール処理エラー:', e.message);
+        debugLogs.push({ error: e.message });
         errors++;
       }
     }
 
-    res.json({ success: true, message: `処理完了: ${processed}件成功, ${errors}件エラー`, processed, errors, results });
+    res.json({ success: true, message: `処理完了: ${processed}件成功, ${errors}件エラー`, processed, errors, results, debug: { query, found: messageIds.length, logs: debugLogs } });
   } catch (e) {
     console.error('処理エラー:', e);
     res.status(500).json({ error: e.message });

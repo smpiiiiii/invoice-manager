@@ -221,6 +221,15 @@ document.getElementById('btnProcess').addEventListener('click', function() {
     showToast('✅ ' + (d.message || '完了'));
     btn.disabled = false;
     loadData();
+    if (d.debug) {
+      var info = '🔍 デバッグ情報\n\n検索クエリ: ' + (d.debug.query || '') + '\n見つかったメール: ' + (d.debug.found || 0) + '件\n\n';
+      if (d.debug.logs) {
+        d.debug.logs.forEach(function(l, i) {
+          info += (i+1) + '. ' + (l.subject || l.error || '') + '\n   添付: ' + (l.attachments || 0) + '件 / 本文: ' + (l.bodyLength || '-') + '文字\n   結果: ' + (l.result || 'なし') + '\n\n';
+        });
+      }
+      alert(info);
+    }
   }).catch(function() { showToast('❌ エラー'); btn.disabled = false; });
 });
 
