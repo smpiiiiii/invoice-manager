@@ -26,15 +26,22 @@ module.exports = async (req, res) => {
     // 1. スプレッドシート・フォルダの確保
     const { sheetId, folderId } = await ensureResources(token, session.email, modeLabel);
 
-    // 2. Gmail検索（PDF/PNG/JPG添付、未処理）
-    const query = `has:attachment (filename:pdf OR filename:png OR filename:jpg OR filename:jpeg) -label:${processedLabel} after:2026/02/01`;
+    // 2. Gmail検索（モード別クエリ）
+    let query;
+    if (mode === 'receipt') {
+      // 領収書モード: 添付付き + 本文に領収書/注文/購入系キーワードがあるメール
+      query = `-label:${processedLabel} after:2026/02/01 {has:attachment (filename:pdf OR filename:png OR filename:jpg OR filename:jpeg) subject:(領収書 OR 領収 OR 注文確認 OR 購入 OR ご利用明細 OR receipt OR order)}`;
+    } else {
+      // 請求書モード: 添付ファイルがあるメール
+      query = `has:attachment (filename:pdf OR filename:png OR filename:jpg OR filename:jpeg) -label:${processedLabel} after:2026/02/01`;
+    }
     const gmailRes = await googleApi(token,
-      `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=10`
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=15`
     );
 
     const messageIds = (gmailRes.messages || []).map(m => m.id);
     if (messageIds.length === 0) {
-      return res.json({ success: true, message: '新しい請求書メールはありません', processed: 0, errors: 0 });
+      return res.json({ success: true, message: `新しい${modeLabel}メールはありません`, processed: 0, errors: 0 });
     }
 
     // 処理済みラベルを取得or作成
@@ -53,19 +60,19 @@ module.exports = async (req, res) => {
         const mailDate = new Date(parseInt(msg.internalDate));
         const yearMonth = mailDate.getFullYear() + '/' + String(mailDate.getMonth() + 1).padStart(2, '0');
         const subject = getHeader(msg, 'Subject') || '(件名なし)';
+        const fromAddr = getHeader(msg, 'From') || '';
 
         // 添付ファイルを抽出（PDF/PNG/JPG）
         const attachParts = getDocAttachments(msg);
-        if (attachParts.length === 0) continue;
 
+        let hasProcessedSomething = false;
+
+        // A. 添付ファイルがあれば解析
         for (const part of attachParts) {
-          // 添付ファイルデータを取得
           const attData = await googleApi(token,
             `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}/attachments/${part.body.attachmentId}`
           );
           const fileBase64 = attData.data.replace(/-/g, '+').replace(/_/g, '/');
-
-          // ファイル形式を判定
           const ext = getFileExtension(part.filename);
           const mimeType = getMimeType(ext);
 
@@ -78,21 +85,32 @@ module.exports = async (req, res) => {
           const analysis = await analyzeWithGemini(geminiKey, fileBase64, mimeType, mode);
 
           if (analysis && analysis.makerName && analysis.amount > 0) {
-            // スプレッドシートに記入
             await updateSheet(token, sheetId, analysis.makerName, analysis.amount, yearMonth);
-
-            // Driveファイルをリネーム
             await googleApi(token,
               `https://www.googleapis.com/drive/v3/files/${driveFile.id}`,
               { method: 'PATCH', body: JSON.stringify({ name: `${analysis.makerName}_${modeLabel}_${yearMonth.replace('/', '')}.${ext}` }) }
             );
-
             results.push({ maker: analysis.makerName, amount: analysis.amount, month: yearMonth });
             processed++;
-          } else {
-            errors++;
+            hasProcessedSomething = true;
           }
         }
+
+        // B. 領収書モード: 添付なし or 添付から見つからなかった場合、メール本文を解析
+        if (mode === 'receipt' && !hasProcessedSomething) {
+          const bodyText = extractEmailBody(msg);
+          if (bodyText && bodyText.length > 20) {
+            const analysis = await analyzeBodyWithGemini(geminiKey, subject, fromAddr, bodyText);
+            if (analysis && analysis.makerName && analysis.amount > 0) {
+              await updateSheet(token, sheetId, analysis.makerName, analysis.amount, yearMonth);
+              results.push({ maker: analysis.makerName, amount: analysis.amount, month: yearMonth, source: 'メール本文' });
+              processed++;
+              hasProcessedSomething = true;
+            }
+          }
+        }
+
+        if (!hasProcessedSomething && attachParts.length > 0) errors++;
 
         // 処理済みラベルを付与
         await googleApi(token,
@@ -117,6 +135,85 @@ module.exports = async (req, res) => {
 function getHeader(msg, name) {
   const h = (msg.payload.headers || []).find(h => h.name.toLowerCase() === name.toLowerCase());
   return h ? h.value : '';
+}
+
+/**
+ * メール本文テキストを抽出（text/plain優先、なければHTMLからタグ除去）
+ */
+function extractEmailBody(msg) {
+  let textBody = '';
+  let htmlBody = '';
+
+  function walk(p) {
+    if (p.mimeType === 'text/plain' && p.body && p.body.data) {
+      textBody += Buffer.from(p.body.data, 'base64').toString('utf-8');
+    }
+    if (p.mimeType === 'text/html' && p.body && p.body.data) {
+      htmlBody += Buffer.from(p.body.data, 'base64').toString('utf-8');
+    }
+    if (p.parts) p.parts.forEach(walk);
+  }
+  walk(msg.payload);
+
+  if (textBody.length > 0) return textBody.substring(0, 3000);
+
+  // HTMLからタグを除去
+  if (htmlBody.length > 0) {
+    const stripped = htmlBody
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&yen;/g, '¥')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return stripped.substring(0, 3000);
+  }
+
+  return '';
+}
+
+/**
+ * メール本文テキストをGeminiで解析して領収書情報を抽出
+ */
+async function analyzeBodyWithGemini(apiKey, subject, fromAddr, bodyText) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+  const prompt = `以下はメールの件名・差出人・本文です。これが購入・注文・決済・領収に関するメールかどうか判定し、該当する場合は情報を抽出してください。
+
+件名: ${subject}
+差出人: ${fromAddr}
+本文:
+${bodyText}
+
+以下をJSON形式のみで返してください:
+1. makerName: 店舗名・サービス名・会社名（短い名前）
+2. amount: 支払い金額（税込、数値のみ）
+
+JSON形式のみ返してください: {"makerName": "会社名", "amount": 12345}
+購入・注文・決済・領収に関するメールでない場合: {"makerName": null, "amount": 0}`;
+
+  const payload = {
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: { temperature: 0.1 }
+  };
+
+  const gemRes = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+
+  if (!gemRes.ok) return null;
+  const data = await gemRes.json();
+  try {
+    let text = data.candidates[0].content.parts[0].text;
+    text = text.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+    const result = JSON.parse(text);
+    return { makerName: result.makerName ? String(result.makerName).trim() : null, amount: parseInt(result.amount) || 0 };
+  } catch (e) { return null; }
 }
 
 // 対応ファイル形式
