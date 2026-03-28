@@ -221,7 +221,7 @@ function extractEmailBody(msg) {
  * メール本文テキストをGeminiで解析して領収書情報を抽出
  */
 async function analyzeBodyWithGemini(apiKey, subject, fromAddr, bodyText) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-001:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
   const prompt = `以下はメールの件名・差出人・本文です。これが購入・注文・決済・領収に関するメールかどうか判定し、該当する場合は情報を抽出してください。
 
 件名: ${subject}
@@ -378,7 +378,7 @@ async function uploadToDrive(token, folderId, fileName, base64Data, mimeType = '
 }
 
 async function analyzeWithGemini(apiKey, fileBase64, mimeType = 'application/pdf', mode = 'invoice') {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-001:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
   // モードに応じたプロンプト
   const prompt = mode === 'receipt'
