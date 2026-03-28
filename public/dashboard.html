@@ -299,6 +299,7 @@ document.getElementById('btnReset').addEventListener('click', function() {
   }).then(function(r) { return r.json(); }).then(function(d) {
     showToast('✅ ' + (d.message || '完了'));
     btn.disabled = false;
+    loadData();
   }).catch(function() { showToast('❌ エラー'); btn.disabled = false; });
 });
 
