@@ -51,9 +51,14 @@ module.exports = async (req, res) => {
     let sheetCleared = false;
     if (sheetSearch.files && sheetSearch.files.length > 0) {
       const sheetId = sheetSearch.files[0].id;
-      // ヘッダー行だけ残してクリア
+      // 1. 全データをクリア
       await googleApi(token,
-        `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/A:ZZ?valueInputOption=RAW`,
+        `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/A:ZZ:clear`,
+        { method: 'POST', body: '{}' }
+      );
+      // 2. ヘッダー行だけ書き戻し
+      await googleApi(token,
+        `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/A1?valueInputOption=RAW`,
         { method: 'PUT', body: JSON.stringify({ values: [['メーカー名']] }) }
       );
       sheetCleared = true;
