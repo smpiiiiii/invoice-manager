@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>📋 請求書管理ダッシュボード</title>
+<title>📋 請求書・領収書管理</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700;900&display=swap" rel="stylesheet">
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box }
@@ -11,17 +11,31 @@ body { font-family: 'Noto Sans JP', sans-serif; background: #0a0e1a; color: #e2e
 .header { background: linear-gradient(135deg, #1e3a5f, #0d2137); padding: 16px; text-align: center; border-bottom: 1px solid rgba(56,189,248,.2) }
 .header h1 { font-size: 17px; font-weight: 900; color: #38bdf8 }
 .user-info { font-size: 11px; color: #64748b; margin-top: 4px }
+
+/* モード切替（グローバル） */
+.mode-toggle { display: flex; gap: 0; margin: 12px auto 0; max-width: 500px; padding: 0 12px }
+.mode-tab { flex: 1; padding: 10px; text-align: center; font-size: 13px; font-weight: 900; cursor: pointer; border: 2px solid #334155; color: #64748b; transition: all .2s }
+.mode-tab:first-child { border-radius: 10px 0 0 10px }
+.mode-tab:last-child { border-radius: 0 10px 10px 0 }
+.mode-tab.active-invoice { background: linear-gradient(135deg, #1e3a5f, #0d2137); border-color: #38bdf8; color: #38bdf8 }
+.mode-tab.active-receipt { background: linear-gradient(135deg, #4a2c1e, #2d1a0e); border-color: #fbbf24; color: #fbbf24 }
+
 .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; padding: 12px; max-width: 500px; margin: 0 auto }
 .stat-card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 12px; text-align: center }
-.stat-card .num { font-size: 24px; font-weight: 900; color: #38bdf8; margin: 2px 0 }
+.stat-card .num { font-size: 24px; font-weight: 900; margin: 2px 0 }
 .stat-card .label { font-size: 10px; color: #94a3b8 }
-.stat-card.gold .num { color: #fbbf24 }
+.invoice-theme .stat-card .num { color: #38bdf8 }
+.invoice-theme .stat-card.gold .num { color: #fbbf24 }
+.receipt-theme .stat-card .num { color: #fbbf24 }
+.receipt-theme .stat-card.gold .num { color: #4ade80 }
+
 .content { padding: 12px; max-width: 500px; margin: 0 auto }
 .tabs { display: flex; gap: 4px; margin-bottom: 10px }
 .tab { flex: 1; padding: 10px; text-align: center; font-size: 11px; font-weight: 700; border-radius: 10px; cursor: pointer; background: #0f172a; color: #64748b; border: 1px solid #1e293b }
 .tab.active { background: #1e3a5f; color: #38bdf8; border-color: #38bdf8 }
 .section { background: #1e293b; border-radius: 12px; padding: 14px; margin-bottom: 10px; border: 1px solid #334155 }
 .section h2 { font-size: 13px; font-weight: 900; color: #38bdf8; margin-bottom: 8px }
+.receipt-theme .section h2 { color: #fbbf24 }
 .btn { display: block; width: 100%; border: none; padding: 13px; border-radius: 10px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; color: #fff; margin-bottom: 6px; text-align: center }
 .btn:active { opacity: .8 }
 .btn-primary { background: linear-gradient(135deg, #2563eb, #1d4ed8) }
@@ -34,7 +48,6 @@ table { width: 100%; border-collapse: collapse; font-size: 11px }
 th { background: #0f172a; color: #38bdf8; padding: 7px 5px; text-align: left; position: sticky; top: 0; white-space: nowrap }
 td { padding: 7px 5px; border-bottom: 1px solid #1e293b; white-space: nowrap }
 .log-item { padding: 6px 8px; border-bottom: 1px solid #0f172a; font-size: 10px; line-height: 1.4 }
-.ok { color: #34d399 } .err { color: #f87171 }
 .hidden { display: none }
 .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #334155; color: #e2e8f0; padding: 10px 20px; border-radius: 10px; font-size: 12px; font-weight: 700; z-index: 100; display: none }
 .spinner { width: 28px; height: 28px; border: 3px solid #334155; border-top: 3px solid #38bdf8; border-radius: 50%; animation: spin .8s linear infinite; margin: 10px auto }
@@ -43,14 +56,20 @@ td { padding: 7px 5px; border-bottom: 1px solid #1e293b; white-space: nowrap }
 </head>
 <body>
 <div class="header">
-  <h1>📋 請求書管理ダッシュボード</h1>
+  <h1>📋 請求書・領収書管理</h1>
   <div class="user-info" id="userInfo"></div>
 </div>
 
-<div class="stats">
+<!-- モード切替 -->
+<div class="mode-toggle">
+  <div class="mode-tab active-invoice" data-mode="invoice">📄 請求書</div>
+  <div class="mode-tab" data-mode="receipt">🧾 領収書</div>
+</div>
+
+<div class="stats invoice-theme" id="statsArea">
   <div class="stat-card"><div class="label">処理済み</div><div class="num" id="sProcessed">-</div></div>
   <div class="stat-card gold"><div class="label">合計金額</div><div class="num" id="sAmount">-</div></div>
-  <div class="stat-card"><div class="label">メーカー数</div><div class="num" id="sMakers">-</div></div>
+  <div class="stat-card"><div class="label">取引先数</div><div class="num" id="sMakers">-</div></div>
   <div class="stat-card"><div class="label">最新月</div><div class="num" id="sMonth" style="font-size:16px">-</div></div>
 </div>
 
@@ -75,23 +94,12 @@ td { padding: 7px 5px; border-bottom: 1px solid #1e293b; white-space: nowrap }
 
   <div id="tab-table" class="hidden">
     <div class="section">
-      <h2>📋 メーカー × 月</h2>
+      <h2 id="tableTitle">📋 メーカー × 月</h2>
       <div class="table-wrap" id="tableArea"><div class="spinner"></div></div>
     </div>
   </div>
 
   <div id="tab-actions" class="hidden">
-    <div class="section">
-      <h2>📂 処理モード</h2>
-      <div style="display:flex;gap:6px;margin-bottom:10px">
-        <button class="btn mode-btn active" data-mode="invoice" style="flex:1;font-size:12px;padding:10px">📄 請求書</button>
-        <button class="btn mode-btn" data-mode="receipt" style="flex:1;font-size:12px;padding:10px">🧾 領収書</button>
-      </div>
-      <style>
-        .mode-btn { background: #0f172a; border: 2px solid #334155; color: #94a3b8; transition: all .2s }
-        .mode-btn.active { background: linear-gradient(135deg, #1e3a5f, #0d2137); border-color: #38bdf8; color: #38bdf8 }
-      </style>
-    </div>
     <div class="section">
       <h2>⚡ 手動操作</h2>
       <button class="btn btn-primary" id="btnProcess">▶️ 今すぐ処理実行</button>
@@ -130,7 +138,48 @@ function showToast(msg) {
   setTimeout(function() { t.style.display = 'none'; }, 3000);
 }
 
-var sheetUrl = '';
+// グローバルデータ
+var allData = null;
+var currentMode = 'invoice';
+
+// モード切替（グローバル）
+document.querySelectorAll('.mode-tab').forEach(function(b) {
+  b.addEventListener('click', function() {
+    document.querySelectorAll('.mode-tab').forEach(function(x) {
+      x.classList.remove('active-invoice', 'active-receipt');
+    });
+    currentMode = b.getAttribute('data-mode');
+    b.classList.add(currentMode === 'receipt' ? 'active-receipt' : 'active-invoice');
+
+    // テーマ切替
+    var statsArea = document.getElementById('statsArea');
+    statsArea.classList.toggle('invoice-theme', currentMode === 'invoice');
+    statsArea.classList.toggle('receipt-theme', currentMode === 'receipt');
+
+    // ヒント切替
+    var label = currentMode === 'receipt' ? '領収書' : '請求書';
+    document.getElementById('modeHint').textContent = currentMode === 'receipt'
+      ? '🧾 メール本文 + 添付ファイルから領収書を検出します'
+      : '📄 PDF / PNG / JPG の請求書を自動検出します';
+    document.getElementById('tableTitle').textContent = currentMode === 'receipt' ? '🧾 店舗 × 月' : '📋 メーカー × 月';
+
+    // データ再描画
+    if (allData) renderModeData(allData);
+  });
+});
+
+function renderModeData(data) {
+  var d = currentMode === 'receipt' ? data.receipt : data.invoice;
+  if (!d) d = { totalProcessed: 0, totalAmount: 0, totalMakers: 0, latestMonth: '-', monthly: [], topMakers: [], tableData: [] };
+
+  document.getElementById('sProcessed').textContent = d.totalProcessed || 0;
+  document.getElementById('sAmount').textContent = '¥' + (d.totalAmount || 0).toLocaleString();
+  document.getElementById('sMakers').textContent = d.totalMakers || 0;
+  document.getElementById('sMonth').textContent = d.latestMonth || '-';
+  renderChart(d.monthly || []);
+  renderTop(d.topMakers || []);
+  renderTable(d.tableData || []);
+}
 
 function loadData() {
   fetch('/api/data').then(function(r) {
@@ -138,15 +187,9 @@ function loadData() {
     return r.json();
   }).then(function(d) {
     if (!d) return;
+    allData = d;
     if (d.user) document.getElementById('userInfo').textContent = d.user.name + ' (' + d.user.email + ')';
-    if (d.sheetUrl) sheetUrl = d.sheetUrl;
-    document.getElementById('sProcessed').textContent = d.totalProcessed || 0;
-    document.getElementById('sAmount').textContent = '¥' + (d.totalAmount || 0).toLocaleString();
-    document.getElementById('sMakers').textContent = d.totalMakers || 0;
-    document.getElementById('sMonth').textContent = d.latestMonth || '-';
-    renderChart(d.monthly || []);
-    renderTop(d.topMakers || []);
-    renderTable(d.tableData || []);
+    renderModeData(d);
   }).catch(function() { showToast('データ取得失敗'); });
 }
 
@@ -155,10 +198,11 @@ function renderChart(monthly) {
   c.innerHTML = ''; l.innerHTML = '';
   if (!monthly.length) { c.innerHTML = '<div style="color:#64748b;font-size:11px;margin:auto">データなし</div>'; return; }
   var max = Math.max.apply(null, monthly.map(function(m) { return m.amount; })) || 1;
+  var barColor = currentMode === 'receipt' ? 'linear-gradient(180deg,#fbbf24,#d97706)' : 'linear-gradient(180deg,#38bdf8,#0284c7)';
   monthly.forEach(function(m) {
     var h = Math.max((m.amount / max) * 140, 3);
     var bar = document.createElement('div');
-    bar.style.cssText = 'flex:1;background:linear-gradient(180deg,#38bdf8,#0284c7);border-radius:4px 4px 0 0;height:' + h + 'px;min-width:16px';
+    bar.style.cssText = 'flex:1;background:' + barColor + ';border-radius:4px 4px 0 0;height:' + h + 'px;min-width:16px';
     bar.title = m.month + ': ¥' + m.amount.toLocaleString();
     c.appendChild(bar);
     var lb = document.createElement('div');
@@ -172,10 +216,11 @@ function renderTop(makers) {
   var d = document.getElementById('topMakers'); d.innerHTML = '';
   if (!makers.length) { d.innerHTML = '<div style="color:#64748b;font-size:11px">データなし</div>'; return; }
   var icons = ['🥇','🥈','🥉','4️⃣','5️⃣'];
+  var amtColor = currentMode === 'receipt' ? '#4ade80' : '#fbbf24';
   makers.forEach(function(m, i) {
     var r = document.createElement('div');
     r.style.cssText = 'display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid #0f172a;font-size:12px';
-    r.innerHTML = '<span style="width:22px;text-align:center">' + icons[i] + '</span><span style="flex:1;font-weight:700">' + m.name + '</span><span style="color:#fbbf24;font-weight:900">¥' + m.amount.toLocaleString() + '</span>';
+    r.innerHTML = '<span style="width:22px;text-align:center">' + icons[i] + '</span><span style="flex:1;font-weight:700">' + m.name + '</span><span style="color:' + amtColor + ';font-weight:900">¥' + m.amount.toLocaleString() + '</span>';
     d.appendChild(r);
   });
 }
@@ -196,18 +241,7 @@ function renderTable(data) {
   w.appendChild(t);
 }
 
-// モード切替
-var currentMode = 'invoice';
-document.querySelectorAll('.mode-btn').forEach(function(b) {
-  b.addEventListener('click', function() {
-    document.querySelectorAll('.mode-btn').forEach(function(x) { x.classList.remove('active'); });
-    b.classList.add('active');
-    currentMode = b.getAttribute('data-mode');
-    var label = currentMode === 'receipt' ? '領収書' : '請求書';
-    document.getElementById('modeHint').textContent = '📄 PDF / PNG / JPG の' + label + 'を自動検出します';
-  });
-});
-
+// 処理実行
 document.getElementById('btnProcess').addEventListener('click', function() {
   var label = currentMode === 'receipt' ? '領収書' : '請求書';
   showToast('⏳ ' + label + '処理中...');
@@ -244,14 +278,18 @@ document.getElementById('btnProcess').addEventListener('click', function() {
   }).catch(function(e) { showToast('❌ エラー: ' + e.message); btn.disabled = false; });
 });
 
+// スプレッドシートを開く
 document.getElementById('btnSheet').addEventListener('click', function() {
-  if (sheetUrl) window.open(sheetUrl, '_blank');
+  if (!allData) { showToast('データ読み込み中'); return; }
+  var d = currentMode === 'receipt' ? allData.receipt : allData.invoice;
+  if (d && d.sheetUrl) window.open(d.sheetUrl, '_blank');
   else showToast('スプレッドシートがまだありません');
 });
 
+// ラベルリセット
 document.getElementById('btnReset').addEventListener('click', function() {
   var label = currentMode === 'receipt' ? '領収書' : '請求書';
-  showToast('🔄 リセット中...');
+  showToast('🔄 ' + label + 'ラベルリセット中...');
   this.disabled = true;
   var btn = this;
   fetch('/api/reset-labels', {
