@@ -333,7 +333,7 @@ async function ensureResources(token, email, modeLabel = '請求書') {
     });
     sheetId = created.id;
     await googleApi(token,
-      `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/A1?valueInputOption=RAW`,
+      `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/A1?valueInputOption=USER_ENTERED`,
       { method: 'PUT', body: JSON.stringify({ values: [['メーカー名']] }) }
     );
   }
@@ -473,7 +473,7 @@ async function updateSheet(token, sheetId, makerName, amount, yearMonth) {
 
   // 書き戻し
   await googleApi(token,
-    `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/A1?valueInputOption=RAW`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/A1?valueInputOption=USER_ENTERED`,
     { method: 'PUT', body: JSON.stringify({ values }) }
   );
 }
