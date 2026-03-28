@@ -97,6 +97,7 @@ td { padding: 7px 5px; border-bottom: 1px solid #1e293b; white-space: nowrap }
       <button class="btn btn-primary" id="btnProcess">▶️ 今すぐ処理実行</button>
       <div style="font-size:10px;color:#64748b;margin:-2px 0 6px;text-align:center" id="modeHint">📄 PDF / PNG / JPG の請求書を自動検出します</div>
       <button class="btn btn-outline" id="btnSheet">📊 スプレッドシートを開く</button>
+      <div id="debugArea" style="margin-top:8px;max-height:300px;overflow:auto;border-radius:8px"></div>
     </div>
     <div class="section">
       <h2>🔧 メンテナンス</h2>
@@ -209,10 +210,11 @@ document.querySelectorAll('.mode-btn').forEach(function(b) {
 
 document.getElementById('btnProcess').addEventListener('click', function() {
   var label = currentMode === 'receipt' ? '領収書' : '請求書';
-  if (!confirm('未処理の' + label + 'を今すぐ処理しますか？')) return;
   showToast('⏳ ' + label + '処理中...');
   this.disabled = true;
   var btn = this;
+  var debugDiv = document.getElementById('debugArea');
+  if (debugDiv) debugDiv.innerHTML = '<div class="spinner"></div>';
   fetch('/api/process', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -221,16 +223,23 @@ document.getElementById('btnProcess').addEventListener('click', function() {
     showToast('✅ ' + (d.message || '完了'));
     btn.disabled = false;
     loadData();
-    if (d.debug) {
-      var info = '🔍 デバッグ情報\n\n検索クエリ: ' + (d.debug.query || '') + '\n見つかったメール: ' + (d.debug.found || 0) + '件\n\n';
-      if (d.debug.logs) {
+    if (d.debug && debugDiv) {
+      var html = '<h2 style="font-size:12px;color:#38bdf8;margin-bottom:6px">🔍 処理結果 (' + (d.debug.found || 0) + '件検出)</h2>';
+      if (d.debug.logs && d.debug.logs.length > 0) {
         d.debug.logs.forEach(function(l, i) {
-          info += (i+1) + '. ' + (l.subject || l.error || '') + '\n   添付: ' + (l.attachments || 0) + '件 / 本文: ' + (l.bodyLength || '-') + '文字\n   結果: ' + (l.result || 'なし') + '\n\n';
+          html += '<div class="log-item">';
+          html += '<div style="color:#e2e8f0;font-weight:700">' + (i+1) + '. ' + (l.subject || l.error || '不明') + '</div>';
+          html += '<div>差出人: ' + (l.from || '-') + '</div>';
+          html += '<div>添付: ' + (l.attachments || 0) + '件 / 本文: ' + (l.bodyLength || '-') + '文字</div>';
+          html += '<div style="color:#fbbf24">結果: ' + (l.result || 'なし') + '</div>';
+          html += '</div>';
         });
+      } else {
+        html += '<div class="log-item" style="color:#64748b">処理対象のメールなし</div>';
       }
-      alert(info);
+      debugDiv.innerHTML = html;
     }
-  }).catch(function() { showToast('❌ エラー'); btn.disabled = false; });
+  }).catch(function(e) { showToast('❌ エラー: ' + e.message); btn.disabled = false; });
 });
 
 document.getElementById('btnSheet').addEventListener('click', function() {
@@ -240,7 +249,6 @@ document.getElementById('btnSheet').addEventListener('click', function() {
 
 document.getElementById('btnReset').addEventListener('click', function() {
   var label = currentMode === 'receipt' ? '領収書' : '請求書';
-  if (!confirm(label + 'の処理済みラベルをリセットしますか？\n同じメールが再度処理されます。')) return;
   showToast('🔄 リセット中...');
   this.disabled = true;
   var btn = this;
