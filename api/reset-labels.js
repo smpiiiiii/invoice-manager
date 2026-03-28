@@ -42,7 +42,24 @@ module.exports = async (req, res) => {
       removed++;
     }
 
-    res.json({ success: true, message: `${removed}件のメールから「${labelName}」ラベルを解除しました`, removed });
+    // スプレッドシートもクリア
+    const modeLabel = mode === 'receipt' ? '領収書' : '請求書';
+    const sheetName = `📋 ${modeLabel}管理`;
+    const sheetSearch = await googleApi(token,
+      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`name='${sheetName}' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`)}&fields=files(id)`
+    );
+    let sheetCleared = false;
+    if (sheetSearch.files && sheetSearch.files.length > 0) {
+      const sheetId = sheetSearch.files[0].id;
+      // ヘッダー行だけ残してクリア
+      await googleApi(token,
+        `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/A:ZZ?valueInputOption=RAW`,
+        { method: 'PUT', body: JSON.stringify({ values: [['メーカー名']] }) }
+      );
+      sheetCleared = true;
+    }
+
+    res.json({ success: true, message: `${removed}件のラベル解除 + ${sheetCleared ? 'シートクリア' : 'シートなし'}`, removed });
   } catch (e) {
     console.error('ラベルリセットエラー:', e);
     res.status(500).json({ error: e.message });
