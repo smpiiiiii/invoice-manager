@@ -36,7 +36,7 @@ module.exports = async (req, res) => {
       query = `has:attachment (filename:pdf OR filename:png OR filename:jpg OR filename:jpeg) -label:${processedLabel} after:2026/03/01`;
     }
     const gmailRes = await googleApi(token,
-      `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=5`
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=3`
     );
 
     const messageIds = (gmailRes.messages || []).map(m => m.id);
@@ -88,7 +88,7 @@ module.exports = async (req, res) => {
           const driveFile = await uploadToDrive(token, monthFolderId, fileName, fileBase64, mimeType);
 
           // Gemini解析（レート制限対策で2秒待機）
-          await sleep(2000);
+          await sleep(4000);
           const analysis = await analyzeWithGemini(geminiKey, fileBase64, mimeType, mode);
           debugEntry.result = `添付(${part.filename}): ${JSON.stringify(analysis)}`;
 
@@ -109,7 +109,7 @@ module.exports = async (req, res) => {
           const bodyText = extractEmailBody(msg);
           debugEntry.bodyLength = bodyText ? bodyText.length : 0;
           if (bodyText && bodyText.length > 20) {
-            await sleep(2000);
+            await sleep(4000);
             const analysis = await analyzeBodyWithGemini(geminiKey, subject, fromAddr, bodyText);
             debugEntry.result = `本文解析: ${JSON.stringify(analysis)}`;
             if (analysis && analysis.makerName && analysis.amount > 0) {
