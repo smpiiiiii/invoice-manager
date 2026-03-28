@@ -216,14 +216,19 @@ JSON形式のみ返してください: {"makerName": "会社名", "amount": 1234
     body: JSON.stringify(payload)
   });
 
-  if (!gemRes.ok) return null;
+  if (!gemRes.ok) {
+    const errText = await gemRes.text();
+    return { _error: `API ${gemRes.status}: ${errText.substring(0, 200)}` };
+  }
   const data = await gemRes.json();
   try {
     let text = data.candidates[0].content.parts[0].text;
     text = text.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
     const result = JSON.parse(text);
     return { makerName: result.makerName ? String(result.makerName).trim() : null, amount: parseInt(result.amount) || 0 };
-  } catch (e) { return null; }
+  } catch (e) {
+    return { _error: `Parse失敗: ${e.message}`, _raw: JSON.stringify(data).substring(0, 300) };
+  }
 }
 
 // 対応ファイル形式
