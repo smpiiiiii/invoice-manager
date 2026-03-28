@@ -60,7 +60,6 @@ module.exports = async (req, res) => {
     // 429リトライ付きGemini呼び出し
     async function callGeminiWithRetry(fn, maxRetries = 1) {
       for (let attempt = 0; attempt <= maxRetries; attempt++) {
-        await sleep(1000); // 呼び出し前に1秒待機
         const result = await fn();
         if (result && result._error && result._error.includes('429')) {
           console.log(`429エラー、${5 * (attempt + 1)}秒待機してリトライ`);
