@@ -82,8 +82,20 @@ td { padding: 7px 5px; border-bottom: 1px solid #1e293b; white-space: nowrap }
 
   <div id="tab-actions" class="hidden">
     <div class="section">
+      <h2>📂 処理モード</h2>
+      <div style="display:flex;gap:6px;margin-bottom:10px">
+        <button class="btn mode-btn active" data-mode="invoice" style="flex:1;font-size:12px;padding:10px">📄 請求書</button>
+        <button class="btn mode-btn" data-mode="receipt" style="flex:1;font-size:12px;padding:10px">🧾 領収書</button>
+      </div>
+      <style>
+        .mode-btn { background: #0f172a; border: 2px solid #334155; color: #94a3b8; transition: all .2s }
+        .mode-btn.active { background: linear-gradient(135deg, #1e3a5f, #0d2137); border-color: #38bdf8; color: #38bdf8 }
+      </style>
+    </div>
+    <div class="section">
       <h2>⚡ 手動操作</h2>
       <button class="btn btn-primary" id="btnProcess">▶️ 今すぐ処理実行</button>
+      <div style="font-size:10px;color:#64748b;margin:-2px 0 6px;text-align:center" id="modeHint">📄 PDF / PNG / JPG の請求書を自動検出します</div>
       <button class="btn btn-outline" id="btnSheet">📊 スプレッドシートを開く</button>
     </div>
     <div class="section">
@@ -178,12 +190,29 @@ function renderTable(data) {
   w.appendChild(t);
 }
 
+// モード切替
+var currentMode = 'invoice';
+document.querySelectorAll('.mode-btn').forEach(function(b) {
+  b.addEventListener('click', function() {
+    document.querySelectorAll('.mode-btn').forEach(function(x) { x.classList.remove('active'); });
+    b.classList.add('active');
+    currentMode = b.getAttribute('data-mode');
+    var label = currentMode === 'receipt' ? '領収書' : '請求書';
+    document.getElementById('modeHint').textContent = '📄 PDF / PNG / JPG の' + label + 'を自動検出します';
+  });
+});
+
 document.getElementById('btnProcess').addEventListener('click', function() {
-  if (!confirm('未処理の請求書を今すぐ処理しますか？')) return;
-  showToast('⏳ 処理中...');
+  var label = currentMode === 'receipt' ? '領収書' : '請求書';
+  if (!confirm('未処理の' + label + 'を今すぐ処理しますか？')) return;
+  showToast('⏳ ' + label + '処理中...');
   this.disabled = true;
   var btn = this;
-  fetch('/api/process', { method: 'POST' }).then(function(r) { return r.json(); }).then(function(d) {
+  fetch('/api/process', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode: currentMode })
+  }).then(function(r) { return r.json(); }).then(function(d) {
     showToast('✅ ' + (d.message || '完了'));
     btn.disabled = false;
     loadData();

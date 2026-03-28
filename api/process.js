@@ -1,7 +1,8 @@
 /**
- * 請求書処理API — メイン処理実行
+ * 請求書/領収書処理API — メイン処理実行
  * POST /api/process
- * ユーザーのGmailからPDF請求書を検索→Drive保存→Gemini解析→Sheets記入
+ * ユーザーのGmailからPDF/PNG/JPG添付を検索→Drive保存→Gemini解析→Sheets記入
+ * bodyパラメータ: mode = 'invoice'(請求書) | 'receipt'(領収書)
  */
 const { getSession, refreshTokenIfNeeded, googleApi } = require('./helpers');
 
@@ -14,12 +15,19 @@ module.exports = async (req, res) => {
   const token = session.access_token;
   const geminiKey = process.env.GEMINI_API_KEY;
 
+  // モード判定（請求書 or 領収書）
+  let body = {};
+  try { body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}); } catch(e) {}
+  const mode = body.mode === 'receipt' ? 'receipt' : 'invoice';
+  const modeLabel = mode === 'receipt' ? '領収書' : '請求書';
+  const processedLabel = mode === 'receipt' ? '領収書処理済' : '請求書処理済';
+
   try {
     // 1. スプレッドシート・フォルダの確保
-    const { sheetId, folderId } = await ensureResources(token, session.email);
+    const { sheetId, folderId } = await ensureResources(token, session.email, modeLabel);
 
-    // 2. Gmail検索（PDF添付、未処理）
-    const query = 'has:attachment filename:pdf -label:請求書処理済 after:2026/02/01';
+    // 2. Gmail検索（PDF/PNG/JPG添付、未処理）
+    const query = `has:attachment (filename:pdf OR filename:png OR filename:jpg OR filename:jpeg) -label:${processedLabel} after:2026/02/01`;
     const gmailRes = await googleApi(token,
       `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=10`
     );
@@ -30,7 +38,7 @@ module.exports = async (req, res) => {
     }
 
     // 処理済みラベルを取得or作成
-    const labelId = await getOrCreateLabel(token, '請求書処理済');
+    const labelId = await getOrCreateLabel(token, processedLabel);
 
     let processed = 0, errors = 0;
     const results = [];
@@ -46,24 +54,28 @@ module.exports = async (req, res) => {
         const yearMonth = mailDate.getFullYear() + '/' + String(mailDate.getMonth() + 1).padStart(2, '0');
         const subject = getHeader(msg, 'Subject') || '(件名なし)';
 
-        // PDF添付ファイルを抽出
-        const pdfParts = getPdfAttachments(msg);
-        if (pdfParts.length === 0) continue;
+        // 添付ファイルを抽出（PDF/PNG/JPG）
+        const attachParts = getDocAttachments(msg);
+        if (attachParts.length === 0) continue;
 
-        for (const part of pdfParts) {
+        for (const part of attachParts) {
           // 添付ファイルデータを取得
           const attData = await googleApi(token,
             `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}/attachments/${part.body.attachmentId}`
           );
-          const pdfBase64 = attData.data.replace(/-/g, '+').replace(/_/g, '/');
+          const fileBase64 = attData.data.replace(/-/g, '+').replace(/_/g, '/');
+
+          // ファイル形式を判定
+          const ext = getFileExtension(part.filename);
+          const mimeType = getMimeType(ext);
 
           // Driveに保存
           const monthFolderId = await getOrCreateMonthFolder(token, folderId, yearMonth);
-          const fileName = part.filename || 'invoice.pdf';
-          const driveFile = await uploadToDrive(token, monthFolderId, fileName, pdfBase64);
+          const fileName = part.filename || `${modeLabel}.${ext}`;
+          const driveFile = await uploadToDrive(token, monthFolderId, fileName, fileBase64, mimeType);
 
           // Gemini解析
-          const analysis = await analyzeWithGemini(geminiKey, pdfBase64);
+          const analysis = await analyzeWithGemini(geminiKey, fileBase64, mimeType, mode);
 
           if (analysis && analysis.makerName && analysis.amount > 0) {
             // スプレッドシートに記入
@@ -72,7 +84,7 @@ module.exports = async (req, res) => {
             // Driveファイルをリネーム
             await googleApi(token,
               `https://www.googleapis.com/drive/v3/files/${driveFile.id}`,
-              { method: 'PATCH', body: JSON.stringify({ name: `${analysis.makerName}_請求書_${yearMonth.replace('/', '')}.pdf` }) }
+              { method: 'PATCH', body: JSON.stringify({ name: `${analysis.makerName}_${modeLabel}_${yearMonth.replace('/', '')}.${ext}` }) }
             );
 
             results.push({ maker: analysis.makerName, amount: analysis.amount, month: yearMonth });
@@ -107,16 +119,38 @@ function getHeader(msg, name) {
   return h ? h.value : '';
 }
 
-function getPdfAttachments(msg) {
+// 対応ファイル形式
+const SUPPORTED_EXTENSIONS = ['.pdf', '.png', '.jpg', '.jpeg'];
+
+function getDocAttachments(msg) {
   const parts = [];
   function walk(p) {
-    if (p.filename && p.filename.toLowerCase().endsWith('.pdf') && p.body && p.body.attachmentId) {
-      parts.push(p);
+    if (p.filename && p.body && p.body.attachmentId) {
+      const lower = p.filename.toLowerCase();
+      if (SUPPORTED_EXTENSIONS.some(ext => lower.endsWith(ext))) {
+        parts.push(p);
+      }
     }
     if (p.parts) p.parts.forEach(walk);
   }
   walk(msg.payload);
   return parts;
+}
+
+function getFileExtension(filename) {
+  if (!filename) return 'pdf';
+  const lower = filename.toLowerCase();
+  if (lower.endsWith('.png')) return 'png';
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'jpg';
+  return 'pdf';
+}
+
+function getMimeType(ext) {
+  switch (ext) {
+    case 'png': return 'image/png';
+    case 'jpg': case 'jpeg': return 'image/jpeg';
+    default: return 'application/pdf';
+  }
 }
 
 async function getOrCreateLabel(token, labelName) {
@@ -130,17 +164,18 @@ async function getOrCreateLabel(token, labelName) {
   return created.id;
 }
 
-async function ensureResources(token, email) {
+async function ensureResources(token, email, modeLabel = '請求書') {
   // スプレッドシートを検索or作成
+  const sheetName = `📋 ${modeLabel}管理`;
   let sheetId = '';
   const searchRes = await googleApi(token,
-    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent("name='📋 請求書管理' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false")}&fields=files(id)`
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`name='${sheetName}' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`)}&fields=files(id)`
   );
   if (searchRes.files && searchRes.files.length > 0) {
     sheetId = searchRes.files[0].id;
   } else {
     const created = await googleApi(token, 'https://www.googleapis.com/drive/v3/files', {
-      method: 'POST', body: JSON.stringify({ name: '📋 請求書管理', mimeType: 'application/vnd.google-apps.spreadsheet' })
+      method: 'POST', body: JSON.stringify({ name: sheetName, mimeType: 'application/vnd.google-apps.spreadsheet' })
     });
     sheetId = created.id;
     // ヘッダー行を設定
@@ -151,15 +186,16 @@ async function ensureResources(token, email) {
   }
 
   // Driveフォルダ検索or作成
+  const folderName = `📁 ${modeLabel}`;
   let folderId = '';
   const folderRes = await googleApi(token,
-    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent("name='📁 請求書' and mimeType='application/vnd.google-apps.folder' and trashed=false")}&fields=files(id)`
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`name='${folderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`)}&fields=files(id)`
   );
   if (folderRes.files && folderRes.files.length > 0) {
     folderId = folderRes.files[0].id;
   } else {
     const created = await googleApi(token, 'https://www.googleapis.com/drive/v3/files', {
-      method: 'POST', body: JSON.stringify({ name: '📁 請求書', mimeType: 'application/vnd.google-apps.folder' })
+      method: 'POST', body: JSON.stringify({ name: folderName, mimeType: 'application/vnd.google-apps.folder' })
     });
     folderId = created.id;
   }
@@ -182,10 +218,10 @@ async function getOrCreateMonthFolder(token, parentId, yearMonth) {
   return created.id;
 }
 
-async function uploadToDrive(token, folderId, fileName, base64Data) {
+async function uploadToDrive(token, folderId, fileName, base64Data, mimeType = 'application/pdf') {
   const boundary = 'invoice_boundary';
   const metadata = JSON.stringify({ name: fileName, parents: [folderId] });
-  const body = `--${boundary}\r\nContent-Type: application/json\r\n\r\n${metadata}\r\n--${boundary}\r\nContent-Type: application/pdf\r\nContent-Transfer-Encoding: base64\r\n\r\n${base64Data}\r\n--${boundary}--`;
+  const body = `--${boundary}\r\nContent-Type: application/json\r\n\r\n${metadata}\r\n--${boundary}\r\nContent-Type: ${mimeType}\r\nContent-Transfer-Encoding: base64\r\n\r\n${base64Data}\r\n--${boundary}--`;
 
   const uploadRes = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
     method: 'POST',
@@ -198,13 +234,19 @@ async function uploadToDrive(token, folderId, fileName, base64Data) {
   return uploadRes.json();
 }
 
-async function analyzeWithGemini(apiKey, pdfBase64) {
+async function analyzeWithGemini(apiKey, fileBase64, mimeType = 'application/pdf', mode = 'invoice') {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+
+  // モードに応じたプロンプト
+  const prompt = mode === 'receipt'
+    ? 'この領収書ファイルから以下をJSON形式で返してください。\n1. makerName: 発行元の会社名・店名（株式会社等は除いた短い名前）\n2. amount: 金額（税込、数値のみ）\n\nJSON形式のみ返してください: {"makerName": "会社名", "amount": 12345}\n領収書でない場合: {"makerName": null, "amount": 0}'
+    : 'この請求書ファイルから以下をJSON形式で返してください。\n1. makerName: 請求元の会社名（株式会社等は除いた短い名前）\n2. amount: 税抜金額（数値のみ）\n\nJSON形式のみ返してください: {"makerName": "会社名", "amount": 12345}\n請求書でない場合: {"makerName": null, "amount": 0}';
+
   const payload = {
     contents: [{
       parts: [
-        { inlineData: { mimeType: 'application/pdf', data: pdfBase64 } },
-        { text: 'この請求書PDFから以下をJSON形式で返してください。\n1. makerName: 請求元の会社名（株式会社等は除いた短い名前）\n2. amount: 税抜金額（数値のみ）\n\nJSON形式のみ返してください: {"makerName": "会社名", "amount": 12345}\n請求書でない場合: {"makerName": null, "amount": 0}' }
+        { inlineData: { mimeType, data: fileBase64 } },
+        { text: prompt }
       ]
     }],
     generationConfig: { temperature: 0.1 }
