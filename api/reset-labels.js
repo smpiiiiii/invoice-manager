@@ -1,7 +1,6 @@
 /**
- * 処理済みラベルをリセットするAPI
+ * 仕分け済ラベルリセット + 両方のスプレッドシートクリア
  * POST /api/reset-labels
- * body: { mode: 'invoice' | 'receipt' }
  */
 const { getSession, refreshTokenIfNeeded, googleApi } = require('./helpers');
 
@@ -13,10 +12,7 @@ module.exports = async (req, res) => {
   session = await refreshTokenIfNeeded(session);
   const token = session.access_token;
 
-  let body = {};
-  try { body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}); } catch(e) {}
-  const mode = body.mode === 'receipt' ? 'receipt' : 'invoice';
-  const labelName = mode === 'receipt' ? '領収書処理済' : '請求書処理済';
+  const labelName = '仕分け済';
 
   try {
     // ラベルを検索
@@ -42,29 +38,30 @@ module.exports = async (req, res) => {
       removed++;
     }
 
-    // スプレッドシートもクリア
-    const modeLabel = mode === 'receipt' ? '領収書' : '請求書';
-    const sheetName = `📋 ${modeLabel}管理`;
-    const sheetSearch = await googleApi(token,
-      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`name='${sheetName}' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`)}&fields=files(id)`
-    );
-    let sheetCleared = false;
-    if (sheetSearch.files && sheetSearch.files.length > 0) {
-      const sheetId = sheetSearch.files[0].id;
-      // 1. 全データをクリア
-      await googleApi(token,
-        `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/A:ZZ:clear`,
-        { method: 'POST', body: '{}' }
+    // 両方のスプレッドシートをクリア
+    let sheetsCleared = 0;
+    for (const modeLabel of ['請求書', '領収書']) {
+      const sheetName = `📋 ${modeLabel}管理`;
+      const sheetSearch = await googleApi(token,
+        `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`name='${sheetName}' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`)}&fields=files(id)`
       );
-      // 2. ヘッダー行だけ書き戻し
-      await googleApi(token,
-        `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/A1?valueInputOption=RAW`,
-        { method: 'PUT', body: JSON.stringify({ values: [['メーカー名']] }) }
-      );
-      sheetCleared = true;
+      if (sheetSearch.files && sheetSearch.files.length > 0) {
+        const sheetId = sheetSearch.files[0].id;
+        // 1. 全データをクリア
+        await googleApi(token,
+          `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/A:ZZ:clear`,
+          { method: 'POST', body: '{}' }
+        );
+        // 2. ヘッダー行だけ書き戻し
+        await googleApi(token,
+          `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/A1?valueInputOption=RAW`,
+          { method: 'PUT', body: JSON.stringify({ values: [['メーカー名']] }) }
+        );
+        sheetsCleared++;
+      }
     }
 
-    res.json({ success: true, message: `${removed}件のラベル解除 + ${sheetCleared ? 'シートクリア' : 'シートなし'}`, removed });
+    res.json({ success: true, message: `${removed}件のラベル解除 + ${sheetsCleared}シートクリア`, removed });
   } catch (e) {
     console.error('ラベルリセットエラー:', e);
     res.status(500).json({ error: e.message });

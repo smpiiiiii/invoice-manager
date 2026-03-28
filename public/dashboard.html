@@ -103,7 +103,7 @@ td { padding: 7px 5px; border-bottom: 1px solid #1e293b; white-space: nowrap }
     <div class="section">
       <h2>⚡ 手動操作</h2>
       <button class="btn btn-primary" id="btnProcess">▶️ 今すぐ処理実行</button>
-      <div style="font-size:10px;color:#64748b;margin:-2px 0 6px;text-align:center" id="modeHint">📄 PDF / PNG / JPG の請求書を自動検出します</div>
+      <div style="font-size:10px;color:#64748b;margin:-2px 0 6px;text-align:center" id="modeHint">📄📧 メールを自動仕分け（請求書・領収書を自動判定）</div>
       <button class="btn btn-outline" id="btnSheet">📊 スプレッドシートを開く</button>
       <div id="debugArea" style="margin-top:8px;max-height:300px;overflow:auto;border-radius:8px"></div>
     </div>
@@ -241,19 +241,18 @@ function renderTable(data) {
   w.appendChild(t);
 }
 
-// 処理実行
-var batchOffset = 0; // 累計カウンター
+// 処理実行（統合仕分け）
+var batchOffset = 0;
 document.getElementById('btnProcess').addEventListener('click', function() {
-  var label = currentMode === 'receipt' ? '領収書' : '請求書';
-  showToast('⏳ ' + label + '処理中...');
+  showToast('⏳ メール仕分け処理中...');
   this.disabled = true;
   var btn = this;
   var debugDiv = document.getElementById('debugArea');
-  if (debugDiv) debugDiv.innerHTML = '<div class="spinner"></div><div style="color:#94a3b8;text-align:center;font-size:12px;margin-top:8px">処理中... ' + (batchOffset + 1) + '件目〜</div>';
+  if (debugDiv) debugDiv.innerHTML = '<div class="spinner"></div><div style="color:#94a3b8;text-align:center;font-size:12px;margin-top:8px">仕分け中... ' + (batchOffset + 1) + '件目〜</div>';
   fetch('/api/process', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mode: currentMode })
+    body: JSON.stringify({})
   }).then(function(r) { return r.json(); }).then(function(d) {
     var found = (d.debug && d.debug.found) || 0;
     var remaining = (d.debug && d.debug.totalRemaining) || 0;
@@ -269,12 +268,13 @@ document.getElementById('btnProcess').addEventListener('click', function() {
       if (d.debug.logs && d.debug.logs.length > 0) {
         d.debug.logs.forEach(function(l, i) {
           var statusColor = '#64748b';
-          if (l.status && l.status.includes('✅')) statusColor = '#4ade80';
+          if (l.status && (l.status.includes('📄') || l.status.includes('🧾'))) statusColor = '#4ade80';
           if (l.status && l.status.includes('⚠️')) statusColor = '#f59e0b';
           if (l.status && l.status.includes('❌')) statusColor = '#f87171';
-          html += '<div class="log-item" style="border-left:3px solid ' + statusColor + ';padding-left:8px;margin-bottom:6px">';
+          var mailUrl = l.msgId ? 'https://mail.google.com/mail/u/0/#inbox/' + l.msgId : '';
+          html += '<div class="log-item" style="border-left:3px solid ' + statusColor + ';padding-left:8px;margin-bottom:6px;cursor:' + (mailUrl ? 'pointer' : 'default') + '" ' + (mailUrl ? 'onclick="window.open(\'' + mailUrl + '\', \'_blank\')"' : '') + '>';
           html += '<div style="display:flex;justify-content:space-between;align-items:center">';
-          html += '<div style="color:#e2e8f0;font-weight:600;font-size:11px;flex:1">' + (l.subject || '不明') + '</div>';
+          html += '<div style="color:#e2e8f0;font-weight:600;font-size:11px;flex:1">' + (mailUrl ? '🔗 ' : '') + (l.subject || '不明') + '</div>';
           if (l.date) html += '<div style="color:#64748b;font-size:10px;white-space:nowrap;margin-left:8px">📅 ' + l.date + '</div>';
           html += '</div>';
           html += '<div style="color:' + statusColor + ';font-size:12px;font-weight:700">' + (l.status || '-') + '</div>';
@@ -296,16 +296,15 @@ document.getElementById('btnSheet').addEventListener('click', function() {
   else showToast('スプレッドシートがまだありません');
 });
 
-// ラベルリセット
+// ラベルリセット（統合）
 document.getElementById('btnReset').addEventListener('click', function() {
-  var label = currentMode === 'receipt' ? '領収書' : '請求書';
-  showToast('🔄 ' + label + 'ラベルリセット中...');
+  showToast('🔄 仕分けラベルリセット中...');
   this.disabled = true;
   var btn = this;
   fetch('/api/reset-labels', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mode: currentMode })
+    body: JSON.stringify({})
   }).then(function(r) { return r.json(); }).then(function(d) {
     showToast('✅ ' + (d.message || '完了'));
     batchOffset = 0;

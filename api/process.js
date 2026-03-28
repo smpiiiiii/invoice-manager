@@ -1,8 +1,7 @@
 /**
- * 請求書/領収書処理API — メイン処理実行
+ * 統合仕分け処理API
  * POST /api/process
- * ユーザーのGmailからPDF/PNG/JPG添付を検索→Drive保存→Gemini解析→Sheets記入
- * bodyパラメータ: mode = 'invoice'(請求書) | 'receipt'(領収書)
+ * メールを一括検索 → Geminiが請求書/領収書/該当なしを自動判定 → それぞれのスプシ・Driveに保存
  */
 const { getSession, refreshTokenIfNeeded, googleApi } = require('./helpers');
 
@@ -18,26 +17,16 @@ module.exports = async (req, res) => {
   const token = session.access_token;
   const geminiKey = process.env.GEMINI_API_KEY;
 
-  // モード判定（請求書 or 領収書）
-  let body = {};
-  try { body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}); } catch(e) {}
-  const mode = body.mode === 'receipt' ? 'receipt' : 'invoice';
-  const modeLabel = mode === 'receipt' ? '領収書' : '請求書';
-  const processedLabel = mode === 'receipt' ? '領収書処理済' : '請求書処理済';
-
   try {
-    // 1. スプレッドシート・フォルダの確保
-    const { sheetId, folderId } = await ensureResources(token, session.email, modeLabel);
+    // 1. 両方のスプレッドシート・フォルダを確保
+    const invoiceRes = await ensureResources(token, session.email, '請求書');
+    const receiptRes = await ensureResources(token, session.email, '領収書');
+    // 親フォルダ確保（YYYYMM フォルダの親）
+    const driveFolderId = await ensureParentFolder(token);
 
-    // 2. Gmail検索（モード別クエリ）
-    let query;
-    if (mode === 'receipt') {
-      // 領収書モード: 添付付きメール + 購入系キーワードメールをすべて拾い、Geminiが判定
-      query = `-label:${processedLabel} after:2026/03/01 (has:attachment OR subject:領収 OR subject:注文 OR subject:購入 OR subject:receipt OR subject:order)`;
-    } else {
-      // 請求書モード: PDF/PNG/JPG添付があるメール
-      query = `has:attachment (filename:pdf OR filename:png OR filename:jpg OR filename:jpeg) -label:${processedLabel} after:2026/03/01`;
-    }
+    // 2. Gmail統合検索（仕分け済ラベル除外）
+    const processedLabel = '仕分け済';
+    const query = `-label:${processedLabel} after:2026/03/01 (has:attachment OR subject:領収 OR subject:注文 OR subject:購入 OR subject:請求 OR subject:receipt OR subject:order OR subject:invoice)`;
     const gmailRes = await googleApi(token,
       `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=10`
     );
@@ -45,10 +34,10 @@ module.exports = async (req, res) => {
 
     const messageIds = (gmailRes.messages || []).map(m => m.id);
     if (messageIds.length === 0) {
-      return res.json({ success: true, message: `新しい${modeLabel}メールはありません`, processed: 0, errors: 0, debug: { query, found: 0, totalRemaining: 0 } });
+      return res.json({ success: true, message: '新しいメールはありません', processed: 0, errors: 0, debug: { query, found: 0, totalRemaining: 0 } });
     }
 
-    // 処理済みラベルを取得or作成
+    // 仕分け済ラベルを取得or作成
     const labelId = await getOrCreateLabel(token, processedLabel);
 
     let processed = 0, errors = 0;
@@ -80,16 +69,17 @@ module.exports = async (req, res) => {
 
         const mailDate = new Date(parseInt(msg.internalDate));
         const yearMonth = mailDate.getFullYear() + '/' + String(mailDate.getMonth() + 1).padStart(2, '0');
+        const yearMonthCompact = mailDate.getFullYear() + String(mailDate.getMonth() + 1).padStart(2, '0');
         const subject = getHeader(msg, 'Subject') || '(件名なし)';
         const fromAddr = getHeader(msg, 'From') || '';
         const attachParts = getDocAttachments(msg);
 
         const dateStr = mailDate.getFullYear() + '/' + String(mailDate.getMonth() + 1).padStart(2, '0') + '/' + String(mailDate.getDate()).padStart(2, '0');
-        const logEntry = { subject: subject.substring(0, 60), from: fromAddr.substring(0, 40), date: dateStr, attachments: attachParts.length, status: '' };
+        const logEntry = { subject: subject.substring(0, 60), from: fromAddr.substring(0, 40), date: dateStr, msgId, attachments: attachParts.length, status: '', type: '' };
         let hasProcessedSomething = false;
         let hitRateLimit = false;
 
-        // A. 添付ファイルがあれば解析
+        // A. 添付ファイルがあれば解析（タイプ自動判定）
         for (const part of attachParts) {
           const attData = await googleApi(token,
             `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}/attachments/${part.body.attachmentId}`
@@ -98,11 +88,7 @@ module.exports = async (req, res) => {
           const ext = getFileExtension(part.filename);
           const mimeType = getMimeType(ext);
 
-          const monthFolderId = await getOrCreateMonthFolder(token, folderId, yearMonth);
-          const fileName = part.filename || `${modeLabel}.${ext}`;
-          const driveFile = await uploadToDrive(token, monthFolderId, fileName, fileBase64, mimeType);
-
-          const analysis = await callGeminiWithRetry(() => analyzeWithGemini(geminiKey, fileBase64, mimeType, mode));
+          const analysis = await callGeminiWithRetry(() => analyzeFileWithGemini(geminiKey, fileBase64, mimeType));
 
           if (analysis && analysis._error) {
             logEntry.status = `⚠️ ${analysis._error.substring(0, 50)}`;
@@ -110,23 +96,35 @@ module.exports = async (req, res) => {
             break;
           }
 
-          if (analysis && analysis.makerName && analysis.amount > 0) {
-            await updateSheet(token, sheetId, analysis.makerName, analysis.amount, yearMonth);
+          if (analysis && analysis.makerName && analysis.amount > 0 && analysis.type !== 'none') {
+            const docType = analysis.type === 'invoice' ? '請求書' : '領収書';
+            const targetSheet = analysis.type === 'invoice' ? invoiceRes.sheetId : receiptRes.sheetId;
+
+            // タイプ別月フォルダに保存
+            const monthFolderName = `${yearMonthCompact} ${docType}`;
+            const monthFolderId = await getOrCreateTypedMonthFolder(token, driveFolderId, monthFolderName);
+            const fileName = part.filename || `${docType}.${ext}`;
+            const driveFile = await uploadToDrive(token, monthFolderId, fileName, fileBase64, mimeType);
+
+            // ファイル名変更
             await googleApi(token,
               `https://www.googleapis.com/drive/v3/files/${driveFile.id}`,
-              { method: 'PATCH', body: JSON.stringify({ name: `${analysis.makerName}_${modeLabel}_${yearMonth.replace('/', '')}.${ext}` }) }
+              { method: 'PATCH', body: JSON.stringify({ name: `${analysis.makerName}_${docType}_${yearMonthCompact}.${ext}` }) }
             );
-            results.push({ maker: analysis.makerName, amount: analysis.amount, month: yearMonth });
-            logEntry.status = `✅ ${analysis.makerName} ¥${analysis.amount.toLocaleString()}`;
+
+            await updateSheet(token, targetSheet, analysis.makerName, analysis.amount, yearMonth);
+            results.push({ maker: analysis.makerName, amount: analysis.amount, month: yearMonth, type: docType });
+            logEntry.status = `${docType === '請求書' ? '📄' : '🧾'} ${docType} → ${analysis.makerName} ¥${analysis.amount.toLocaleString()}`;
+            logEntry.type = analysis.type;
             processed++;
             hasProcessedSomething = true;
           } else {
-            logEntry.status = `⏭️ ${modeLabel}ではない`;
+            logEntry.status = '⏭️ 該当なし';
           }
         }
 
-        // B. 領収書モード: メール本文を解析
-        if (mode === 'receipt' && !hasProcessedSomething && !hitRateLimit) {
+        // B. 添付なし or 添付で該当なし → メール本文を解析
+        if (!hasProcessedSomething && !hitRateLimit) {
           const bodyText = extractEmailBody(msg);
           if (bodyText && bodyText.length > 20) {
             const analysis = await callGeminiWithRetry(() => analyzeBodyWithGemini(geminiKey, subject, fromAddr, bodyText));
@@ -134,16 +132,20 @@ module.exports = async (req, res) => {
             if (analysis && analysis._error) {
               logEntry.status = `⚠️ ${analysis._error.substring(0, 50)}`;
               hitRateLimit = true;
-            } else if (analysis && analysis.makerName && analysis.amount > 0) {
-              await updateSheet(token, sheetId, analysis.makerName, analysis.amount, yearMonth);
-              results.push({ maker: analysis.makerName, amount: analysis.amount, month: yearMonth, source: 'メール本文' });
-              logEntry.status = `✅ ${analysis.makerName} ¥${analysis.amount.toLocaleString()}`;
+            } else if (analysis && analysis.makerName && analysis.amount > 0 && analysis.type !== 'none') {
+              const docType = analysis.type === 'invoice' ? '請求書' : '領収書';
+              const targetSheet = analysis.type === 'invoice' ? invoiceRes.sheetId : receiptRes.sheetId;
+
+              await updateSheet(token, targetSheet, analysis.makerName, analysis.amount, yearMonth);
+              results.push({ maker: analysis.makerName, amount: analysis.amount, month: yearMonth, type: docType, source: 'メール本文' });
+              logEntry.status = `${docType === '請求書' ? '📄' : '🧾'} ${docType} → ${analysis.makerName} ¥${analysis.amount.toLocaleString()}`;
+              logEntry.type = analysis.type;
               processed++;
               hasProcessedSomething = true;
             } else {
-              logEntry.status = `⏭️ ${modeLabel}ではない`;
+              logEntry.status = '⏭️ 該当なし';
             }
-          } else {
+          } else if (!logEntry.status) {
             logEntry.status = '⏭️ 本文なし';
           }
         }
@@ -151,7 +153,7 @@ module.exports = async (req, res) => {
         if (!hasProcessedSomething && !hitRateLimit && attachParts.length > 0) errors++;
         debugLogs.push(logEntry);
 
-        // レート制限でなければ処理済みラベル付与
+        // レート制限でなければ仕分け済ラベル付与
         if (!hitRateLimit) {
           await googleApi(token,
             `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}/modify`,
@@ -219,11 +221,11 @@ function extractEmailBody(msg) {
 }
 
 /**
- * メール本文テキストをGeminiで解析して領収書情報を抽出
+ * メール本文をGeminiで解析（タイプ自動判定付き）
  */
 async function analyzeBodyWithGemini(apiKey, subject, fromAddr, bodyText) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-  const prompt = `以下はメールの件名・差出人・本文です。これが購入・注文・決済・領収に関するメールかどうか判定し、該当する場合は情報を抽出してください。
+  const prompt = `以下はメールの件名・差出人・本文です。このメールが「請求書」「領収書（購入・注文・決済・領収）」のどちらかに該当するか判定し、情報を抽出してください。
 
 件名: ${subject}
 差出人: ${fromAddr}
@@ -231,12 +233,13 @@ async function analyzeBodyWithGemini(apiKey, subject, fromAddr, bodyText) {
 ${bodyText}
 
 以下をJSON形式のみで返してください:
-1. makerName: 店舗名・サービス名・会社名（短い名前）
-2. amount: 支払い金額（税込、数値のみ）
+1. type: "invoice"(請求書) または "receipt"(領収書・購入・注文・決済) または "none"(該当なし)
+2. makerName: 店舗名・サービス名・会社名（短い名前）
+3. amount: 金額（請求書なら税抜き、領収書なら税込み、数値のみ）
 
-JSON形式のみ返してください: {"makerName": "会社名", "amount": 12345}
-※見積書・見積もり・査定・概算は除外してください。実際に支払いが発生したもののみ対象です。
-購入・注文・決済・領収に関するメールでない場合: {"makerName": null, "amount": 0}`;
+JSON形式のみ返してください: {"type": "receipt", "makerName": "会社名", "amount": 12345}
+※見積書・見積もり・査定・概算・クーポン・お知らせ・通知のみのメールは除外。実際に支払いが発生または請求されたもののみ対象。
+該当なしの場合: {"type": "none", "makerName": null, "amount": 0}`;
 
   const payload = {
     contents: [{ parts: [{ text: prompt }] }],
@@ -258,7 +261,11 @@ JSON形式のみ返してください: {"makerName": "会社名", "amount": 1234
     let text = data.candidates[0].content.parts[0].text;
     text = text.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
     const result = JSON.parse(text);
-    return { makerName: result.makerName ? String(result.makerName).trim() : null, amount: parseInt(result.amount) || 0 };
+    return {
+      type: result.type || 'none',
+      makerName: result.makerName ? String(result.makerName).trim() : null,
+      amount: parseInt(result.amount) || 0
+    };
   } catch (e) {
     return { _error: `Parse失敗: ${e.message}`, _raw: JSON.stringify(data).substring(0, 300) };
   }
@@ -309,8 +316,10 @@ async function getOrCreateLabel(token, labelName) {
   return created.id;
 }
 
+/**
+ * スプレッドシートを検索or作成
+ */
 async function ensureResources(token, email, modeLabel = '請求書') {
-  // スプレッドシートを検索or作成
   const sheetName = `📋 ${modeLabel}管理`;
   let sheetId = '';
   const searchRes = await googleApi(token,
@@ -323,35 +332,34 @@ async function ensureResources(token, email, modeLabel = '請求書') {
       method: 'POST', body: JSON.stringify({ name: sheetName, mimeType: 'application/vnd.google-apps.spreadsheet' })
     });
     sheetId = created.id;
-    // ヘッダー行を設定
     await googleApi(token,
       `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/A1?valueInputOption=RAW`,
       { method: 'PUT', body: JSON.stringify({ values: [['メーカー名']] }) }
     );
   }
+  return { sheetId };
+}
 
-  // Driveフォルダ検索or作成
-  const folderName = `📁 ${modeLabel}`;
-  let folderId = '';
+/**
+ * 親フォルダ確保（請求書・領収書管理）
+ */
+async function ensureParentFolder(token) {
+  const folderName = '📂 請求書・領収書管理';
   const folderRes = await googleApi(token,
     `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`name='${folderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`)}&fields=files(id)`
   );
-  if (folderRes.files && folderRes.files.length > 0) {
-    folderId = folderRes.files[0].id;
-  } else {
-    const created = await googleApi(token, 'https://www.googleapis.com/drive/v3/files', {
-      method: 'POST', body: JSON.stringify({ name: folderName, mimeType: 'application/vnd.google-apps.folder' })
-    });
-    folderId = created.id;
-  }
+  if (folderRes.files && folderRes.files.length > 0) return folderRes.files[0].id;
 
-  return { sheetId, folderId };
+  const created = await googleApi(token, 'https://www.googleapis.com/drive/v3/files', {
+    method: 'POST', body: JSON.stringify({ name: folderName, mimeType: 'application/vnd.google-apps.folder' })
+  });
+  return created.id;
 }
 
-async function getOrCreateMonthFolder(token, parentId, yearMonth) {
-  const parts = yearMonth.split('/');
-  const folderName = parts[0] + '年' + parts[1] + '月';
-
+/**
+ * タイプ別月フォルダ（例: "202603 請求書"）
+ */
+async function getOrCreateTypedMonthFolder(token, parentId, folderName) {
   const searchRes = await googleApi(token,
     `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`name='${folderName}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`)}&fields=files(id)`
   );
@@ -379,13 +387,20 @@ async function uploadToDrive(token, folderId, fileName, base64Data, mimeType = '
   return uploadRes.json();
 }
 
-async function analyzeWithGemini(apiKey, fileBase64, mimeType = 'application/pdf', mode = 'invoice') {
+/**
+ * 添付ファイルをGeminiで解析（タイプ自動判定付き）
+ */
+async function analyzeFileWithGemini(apiKey, fileBase64, mimeType = 'application/pdf') {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
-  // モードに応じたプロンプト
-  const prompt = mode === 'receipt'
-    ? 'この領収書ファイルから以下をJSON形式で返してください。\n1. makerName: 発行元の会社名・店名（株式会社等は除いた短い名前）\n2. amount: 金額（税込、数値のみ）\n\nJSON形式のみ返してください: {"makerName": "会社名", "amount": 12345}\n※見積書・見積もり・査定・概算は除外してください。実際の支払いが確認できるもののみ対象です。\n領収書でない場合: {"makerName": null, "amount": 0}'
-    : 'この請求書ファイルから以下をJSON形式で返してください。\n1. makerName: 請求元の会社名（株式会社等は除いた短い名前）\n2. amount: 税抜金額（数値のみ）\n\nJSON形式のみ返してください: {"makerName": "会社名", "amount": 12345}\n※見積書・見積もり・査定・概算は除外してください。実際の請求が確認できるもののみ対象です。\n請求書でない場合: {"makerName": null, "amount": 0}';
+  const prompt = `このファイルを分析して以下を判定してください:
+1. type: "invoice"(請求書) または "receipt"(領収書) または "none"(該当なし)
+2. makerName: 発行元の会社名・店名（株式会社等は除いた短い名前）
+3. amount: 金額（請求書なら税抜き金額、領収書なら税込み金額、数値のみ）
+
+JSON形式のみ返してください: {"type": "invoice", "makerName": "会社名", "amount": 12345}
+※見積書・見積もり・査定・概算は除外。実際の請求書または領収書のみ対象。
+該当なしの場合: {"type": "none", "makerName": null, "amount": 0}`;
 
   const payload = {
     contents: [{
@@ -405,14 +420,18 @@ async function analyzeWithGemini(apiKey, fileBase64, mimeType = 'application/pdf
 
   if (!gemRes.ok) {
     const errText = await gemRes.text();
-    return { _error: `API ${gemRes.status}: ${errText.substring(0, 200)}`, _keyPrefix: apiKey ? apiKey.substring(0, 8) + '...' : 'MISSING' };
+    return { _error: `API ${gemRes.status}: ${errText.substring(0, 200)}` };
   }
   const data = await gemRes.json();
   try {
     let text = data.candidates[0].content.parts[0].text;
     text = text.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
     const result = JSON.parse(text);
-    return { makerName: result.makerName ? String(result.makerName).trim() : null, amount: parseInt(result.amount) || 0 };
+    return {
+      type: result.type || 'none',
+      makerName: result.makerName ? String(result.makerName).trim() : null,
+      amount: parseInt(result.amount) || 0
+    };
   } catch (e) {
     return { _error: `Parse: ${e.message}`, _raw: JSON.stringify(data).substring(0, 300) };
   }
