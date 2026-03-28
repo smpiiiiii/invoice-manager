@@ -224,18 +224,20 @@ document.getElementById('btnProcess').addEventListener('click', function() {
     btn.disabled = false;
     loadData();
     if (d.debug && debugDiv) {
-      var html = '<h2 style="font-size:12px;color:#38bdf8;margin-bottom:6px">🔍 処理結果 (' + (d.debug.found || 0) + '件検出)</h2>';
+      var html = '<h2 style="font-size:13px;color:#38bdf8;margin-bottom:8px">📊 処理結果 (' + (d.processed || 0) + '/' + (d.debug.found || 0) + '件成功)</h2>';
       if (d.debug.logs && d.debug.logs.length > 0) {
         d.debug.logs.forEach(function(l, i) {
-          html += '<div class="log-item">';
-          html += '<div style="color:#e2e8f0;font-weight:700">' + (i+1) + '. ' + (l.subject || l.error || '不明') + '</div>';
-          html += '<div>差出人: ' + (l.from || '-') + '</div>';
-          html += '<div>添付: ' + (l.attachments || 0) + '件 / 本文: ' + (l.bodyLength || '-') + '文字</div>';
-          html += '<div style="color:#fbbf24">結果: ' + (l.result || 'なし') + '</div>';
+          var statusColor = '#64748b';
+          if (l.status && l.status.includes('✅')) statusColor = '#4ade80';
+          if (l.status && l.status.includes('⚠️')) statusColor = '#f59e0b';
+          if (l.status && l.status.includes('❌')) statusColor = '#f87171';
+          html += '<div class="log-item" style="border-left:3px solid ' + statusColor + ';padding-left:8px;margin-bottom:6px">';
+          html += '<div style="color:#e2e8f0;font-weight:600;font-size:11px">' + (l.subject || '不明') + '</div>';
+          html += '<div style="color:' + statusColor + ';font-size:12px;font-weight:700">' + (l.status || '-') + '</div>';
           html += '</div>';
         });
       } else {
-        html += '<div class="log-item" style="color:#64748b">処理対象のメールなし</div>';
+        html += '<div style="color:#64748b;text-align:center;padding:12px">処理対象のメールなし</div>';
       }
       debugDiv.innerHTML = html;
     }

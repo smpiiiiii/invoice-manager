@@ -51,12 +51,26 @@ module.exports = async (req, res) => {
     const results = [];
     const debugLogs = [];
 
-    // レート制限対策のディレイ関数
+    // レート制限対策
     const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+    // 429リトライ付きGemini呼び出し
+    async function callGeminiWithRetry(fn, maxRetries = 2) {
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        await sleep(3000); // 呼び出し前に3秒待機
+        const result = await fn();
+        if (result && result._error && result._error.includes('429')) {
+          console.log(`429エラー、${10 * (attempt + 1)}秒待機してリトライ (${attempt + 1}/${maxRetries})`);
+          await sleep(10000 * (attempt + 1)); // 10秒、20秒と増やす
+          continue;
+        }
+        return result;
+      }
+      return { _error: 'レート制限超過（リトライ失敗）' };
+    }
 
     for (const msgId of messageIds) {
       try {
-        // メール詳細を取得
         const msg = await googleApi(token,
           `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}?format=full`
         );
@@ -65,13 +79,11 @@ module.exports = async (req, res) => {
         const yearMonth = mailDate.getFullYear() + '/' + String(mailDate.getMonth() + 1).padStart(2, '0');
         const subject = getHeader(msg, 'Subject') || '(件名なし)';
         const fromAddr = getHeader(msg, 'From') || '';
-
-        // 添付ファイルを抽出（PDF/PNG/JPG）
         const attachParts = getDocAttachments(msg);
 
-        const debugEntry = { subject: subject.substring(0, 50), from: fromAddr.substring(0, 40), attachments: attachParts.length, result: '' };
-
+        const logEntry = { subject: subject.substring(0, 60), from: fromAddr.substring(0, 40), attachments: attachParts.length, status: '' };
         let hasProcessedSomething = false;
+        let hitRateLimit = false;
 
         // A. 添付ファイルがあれば解析
         for (const part of attachParts) {
@@ -82,15 +94,17 @@ module.exports = async (req, res) => {
           const ext = getFileExtension(part.filename);
           const mimeType = getMimeType(ext);
 
-          // Driveに保存
           const monthFolderId = await getOrCreateMonthFolder(token, folderId, yearMonth);
           const fileName = part.filename || `${modeLabel}.${ext}`;
           const driveFile = await uploadToDrive(token, monthFolderId, fileName, fileBase64, mimeType);
 
-          // Gemini解析（レート制限対策で2秒待機）
-          await sleep(4000);
-          const analysis = await analyzeWithGemini(geminiKey, fileBase64, mimeType, mode);
-          debugEntry.result = `添付(${part.filename}): ${JSON.stringify(analysis)}`;
+          const analysis = await callGeminiWithRetry(() => analyzeWithGemini(geminiKey, fileBase64, mimeType, mode));
+
+          if (analysis && analysis._error) {
+            logEntry.status = `⚠️ ${analysis._error.substring(0, 50)}`;
+            hitRateLimit = true;
+            break;
+          }
 
           if (analysis && analysis.makerName && analysis.amount > 0) {
             await updateSheet(token, sheetId, analysis.makerName, analysis.amount, yearMonth);
@@ -99,41 +113,50 @@ module.exports = async (req, res) => {
               { method: 'PATCH', body: JSON.stringify({ name: `${analysis.makerName}_${modeLabel}_${yearMonth.replace('/', '')}.${ext}` }) }
             );
             results.push({ maker: analysis.makerName, amount: analysis.amount, month: yearMonth });
+            logEntry.status = `✅ ${analysis.makerName} ¥${analysis.amount.toLocaleString()}`;
             processed++;
             hasProcessedSomething = true;
+          } else {
+            logEntry.status = `⏭️ ${modeLabel}ではない`;
           }
         }
 
-        // B. 領収書モード: 添付なし or 添付から見つからなかった場合、メール本文を解析
-        if (mode === 'receipt' && !hasProcessedSomething) {
+        // B. 領収書モード: メール本文を解析
+        if (mode === 'receipt' && !hasProcessedSomething && !hitRateLimit) {
           const bodyText = extractEmailBody(msg);
-          debugEntry.bodyLength = bodyText ? bodyText.length : 0;
           if (bodyText && bodyText.length > 20) {
-            await sleep(4000);
-            const analysis = await analyzeBodyWithGemini(geminiKey, subject, fromAddr, bodyText);
-            debugEntry.result = `本文解析: ${JSON.stringify(analysis)}`;
-            if (analysis && analysis.makerName && analysis.amount > 0) {
+            const analysis = await callGeminiWithRetry(() => analyzeBodyWithGemini(geminiKey, subject, fromAddr, bodyText));
+
+            if (analysis && analysis._error) {
+              logEntry.status = `⚠️ ${analysis._error.substring(0, 50)}`;
+              hitRateLimit = true;
+            } else if (analysis && analysis.makerName && analysis.amount > 0) {
               await updateSheet(token, sheetId, analysis.makerName, analysis.amount, yearMonth);
               results.push({ maker: analysis.makerName, amount: analysis.amount, month: yearMonth, source: 'メール本文' });
+              logEntry.status = `✅ ${analysis.makerName} ¥${analysis.amount.toLocaleString()}`;
               processed++;
               hasProcessedSomething = true;
+            } else {
+              logEntry.status = `⏭️ ${modeLabel}ではない`;
             }
           } else {
-            debugEntry.result = '本文が短すぎてスキップ';
+            logEntry.status = '⏭️ 本文なし';
           }
         }
 
-        if (!hasProcessedSomething && attachParts.length > 0) errors++;
-        debugLogs.push(debugEntry);
+        if (!hasProcessedSomething && !hitRateLimit && attachParts.length > 0) errors++;
+        debugLogs.push(logEntry);
 
-        // 処理済みラベルを付与
-        await googleApi(token,
-          `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}/modify`,
-          { method: 'POST', body: JSON.stringify({ addLabelIds: [labelId] }) }
-        );
+        // レート制限でなければ処理済みラベル付与
+        if (!hitRateLimit) {
+          await googleApi(token,
+            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}/modify`,
+            { method: 'POST', body: JSON.stringify({ addLabelIds: [labelId] }) }
+          );
+        }
       } catch (e) {
         console.error('メール処理エラー:', e.message);
-        debugLogs.push({ error: e.message });
+        debugLogs.push({ subject: '???', status: `❌ ${e.message.substring(0, 50)}` });
         errors++;
       }
     }
