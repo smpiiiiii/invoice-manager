@@ -30,10 +30,10 @@ module.exports = async (req, res) => {
     let query;
     if (mode === 'receipt') {
       // 領収書モード: 添付付き + 本文に領収書/注文/購入系キーワードがあるメール
-      query = `-label:${processedLabel} after:2026/02/01 {has:attachment (filename:pdf OR filename:png OR filename:jpg OR filename:jpeg) subject:(領収書 OR 領収 OR 注文確認 OR 購入 OR ご利用明細 OR receipt OR order)}`;
+      query = `-label:${processedLabel} after:2026/03/01 {has:attachment (filename:pdf OR filename:png OR filename:jpg OR filename:jpeg) subject:(領収書 OR 領収 OR 注文確認 OR 購入 OR ご利用明細 OR receipt OR order)}`;
     } else {
       // 請求書モード: 添付ファイルがあるメール
-      query = `has:attachment (filename:pdf OR filename:png OR filename:jpg OR filename:jpeg) -label:${processedLabel} after:2026/02/01`;
+      query = `has:attachment (filename:pdf OR filename:png OR filename:jpg OR filename:jpeg) -label:${processedLabel} after:2026/03/01`;
     }
     const gmailRes = await googleApi(token,
       `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=15`
