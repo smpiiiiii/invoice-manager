@@ -39,7 +39,7 @@ module.exports = async (req, res) => {
       query = `has:attachment (filename:pdf OR filename:png OR filename:jpg OR filename:jpeg) -label:${processedLabel} after:2026/03/01`;
     }
     const gmailRes = await googleApi(token,
-      `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=1`
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=5`
     );
 
     const messageIds = (gmailRes.messages || []).map(m => m.id);
