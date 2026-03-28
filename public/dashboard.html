@@ -52,6 +52,15 @@ td { padding: 7px 5px; border-bottom: 1px solid #1e293b; white-space: nowrap }
 .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #334155; color: #e2e8f0; padding: 10px 20px; border-radius: 10px; font-size: 12px; font-weight: 700; z-index: 100; display: none }
 .spinner { width: 28px; height: 28px; border: 3px solid #334155; border-top: 3px solid #38bdf8; border-radius: 50%; animation: spin .8s linear infinite; margin: 10px auto }
 @keyframes spin { to { transform: rotate(360deg) } }
+.stat-card { cursor: pointer; transition: transform .15s, box-shadow .15s }
+.stat-card:active { transform: scale(.95) }
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 200; display: none; align-items: center; justify-content: center; padding: 16px }
+.modal-overlay.show { display: flex }
+.modal-box { background: #1e293b; border: 1px solid #334155; border-radius: 14px; padding: 16px; width: 100%; max-width: 460px; max-height: 70vh; overflow: auto }
+.modal-box h3 { font-size: 14px; color: #38bdf8; margin-bottom: 10px }
+.modal-close { float: right; background: none; border: none; color: #94a3b8; font-size: 20px; cursor: pointer }
+.modal-item { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #0f172a; font-size: 12px }
+.batch-header { background: #0f172a; padding: 6px 8px; margin: 8px 0 4px; border-radius: 6px; font-size: 11px; color: #38bdf8; font-weight: 700 }
 </style>
 </head>
 <body>
@@ -67,10 +76,18 @@ td { padding: 7px 5px; border-bottom: 1px solid #1e293b; white-space: nowrap }
 </div>
 
 <div class="stats invoice-theme" id="statsArea">
-  <div class="stat-card"><div class="label">処理済み</div><div class="num" id="sProcessed">-</div></div>
-  <div class="stat-card gold"><div class="label">合計金額</div><div class="num" id="sAmount">-</div></div>
-  <div class="stat-card"><div class="label">取引先数</div><div class="num" id="sMakers">-</div></div>
-  <div class="stat-card"><div class="label">最新月</div><div class="num" id="sMonth" style="font-size:16px">-</div></div>
+  <div class="stat-card" data-stat="processed"><div class="label">処理済み</div><div class="num" id="sProcessed">-</div></div>
+  <div class="stat-card gold" data-stat="amount"><div class="label">合計金額</div><div class="num" id="sAmount">-</div></div>
+  <div class="stat-card" data-stat="makers"><div class="label">取引先数</div><div class="num" id="sMakers">-</div></div>
+  <div class="stat-card" data-stat="month"><div class="label">最新月</div><div class="num" id="sMonth" style="font-size:16px">-</div></div>
+</div>
+
+<!-- 詳細モーダル -->
+<div class="modal-overlay" id="statModal">
+  <div class="modal-box">
+    <button class="modal-close" onclick="document.getElementById('statModal').classList.remove('show')">&times;</button>
+    <div id="statModalContent"></div>
+  </div>
 </div>
 
 <div class="content">
@@ -241,14 +258,103 @@ function renderTable(data) {
   w.appendChild(t);
 }
 
-// 処理実行（統合仕分け）
+// 統計カードタップで詳細モーダル
+document.querySelectorAll('.stat-card').forEach(function(card) {
+  card.addEventListener('click', function() {
+    var stat = card.getAttribute('data-stat');
+    if (!allData) return;
+    var d = currentMode === 'receipt' ? allData.receipt : allData.invoice;
+    if (!d) return;
+    var modal = document.getElementById('statModal');
+    var content = document.getElementById('statModalContent');
+    var modeIcon = currentMode === 'receipt' ? '🧾' : '📄';
+    var modeLabel = currentMode === 'receipt' ? '領収書' : '請求書';
+    var html = '';
+
+    if (stat === 'processed') {
+      html = '<h3>' + modeIcon + ' 処理済み詳細</h3>';
+      if (d.tableData && d.tableData.length > 1) {
+        var months = d.tableData[0].slice(1);
+        for (var r = 1; r < d.tableData.length; r++) {
+          var name = d.tableData[r][0] || '';
+          for (var c = 1; c < d.tableData[r].length; c++) {
+            var val = parseInt(d.tableData[r][c]) || 0;
+            if (val > 0) {
+              html += '<div class="modal-item"><span style="color:#e2e8f0">' + name + ' (' + (months[c-1]||'') + ')</span><span style="color:#4ade80;font-weight:700">¥' + val.toLocaleString() + '</span></div>';
+            }
+          }
+        }
+      } else { html += '<div style="color:#64748b">データなし</div>'; }
+    } else if (stat === 'amount') {
+      html = '<h3>' + modeIcon + ' 金額内訳</h3>';
+      if (d.topMakers && d.topMakers.length > 0) {
+        d.topMakers.forEach(function(m) {
+          var pct = d.totalAmount > 0 ? Math.round(m.amount / d.totalAmount * 100) : 0;
+          html += '<div class="modal-item"><span style="color:#e2e8f0">' + m.name + '</span><span style="color:#fbbf24;font-weight:700">¥' + m.amount.toLocaleString() + ' (' + pct + '%)</span></div>';
+        });
+        html += '<div class="modal-item" style="border-top:2px solid #334155;margin-top:6px;padding-top:8px"><span style="color:#94a3b8;font-weight:700">合計</span><span style="color:#4ade80;font-weight:900">¥' + (d.totalAmount||0).toLocaleString() + '</span></div>';
+      } else { html += '<div style="color:#64748b">データなし</div>'; }
+    } else if (stat === 'makers') {
+      html = '<h3>' + modeIcon + ' 取引先一覧 (' + (d.totalMakers||0) + '社)</h3>';
+      if (d.topMakers && d.topMakers.length > 0) {
+        var allMakers = d.tableData ? d.tableData.slice(1).map(function(r) {
+          var total = 0;
+          for (var c = 1; c < r.length; c++) total += (parseInt(r[c]) || 0);
+          return { name: r[0], amount: total };
+        }).sort(function(a,b) { return b.amount - a.amount; }) : d.topMakers;
+        allMakers.forEach(function(m, i) {
+          html += '<div class="modal-item"><span style="color:#e2e8f0">' + (i+1) + '. ' + m.name + '</span><span style="color:#4ade80;font-weight:700">¥' + m.amount.toLocaleString() + '</span></div>';
+        });
+      } else { html += '<div style="color:#64748b">データなし</div>'; }
+    } else if (stat === 'month') {
+      html = '<h3>' + modeIcon + ' 月別合計</h3>';
+      if (d.monthly && d.monthly.length > 0) {
+        d.monthly.forEach(function(m) {
+          html += '<div class="modal-item"><span style="color:#e2e8f0">' + m.month + '</span><span style="color:#38bdf8;font-weight:700">¥' + m.amount.toLocaleString() + '</span></div>';
+        });
+      } else { html += '<div style="color:#64748b">データなし</div>'; }
+    }
+
+    content.innerHTML = html;
+    modal.classList.add('show');
+  });
+});
+
+// 処理実行（統合仕分け・結果蓄積）
 var batchOffset = 0;
+var allBatchResults = []; // 結果蓄積用
+
+function renderAllBatches(debugDiv) {
+  var html = '';
+  allBatchResults.forEach(function(batch) {
+    html += '<div class="batch-header">📬 ' + batch.rangeStart + '〜' + batch.rangeEnd + '件目 (' + batch.processed + '/' + batch.found + '件成功) ｜ 残り約' + batch.remaining + '件</div>';
+    batch.logs.forEach(function(l) {
+      var statusColor = '#64748b';
+      if (l.status && (l.status.includes('📄') || l.status.includes('🧾'))) statusColor = '#4ade80';
+      if (l.status && l.status.includes('⚠️')) statusColor = '#f59e0b';
+      if (l.status && l.status.includes('❌')) statusColor = '#f87171';
+      var mailUrl = l.msgId ? 'https://mail.google.com/mail/u/0/#inbox/' + l.msgId : '';
+      html += '<div class="log-item" style="border-left:3px solid ' + statusColor + ';padding-left:8px;margin-bottom:4px;cursor:' + (mailUrl ? 'pointer' : 'default') + '" ' + (mailUrl ? 'onclick="window.open(\'' + mailUrl + '\', \'_blank\')"' : '') + '>';
+      html += '<div style="display:flex;justify-content:space-between;align-items:center">';
+      html += '<div style="color:#e2e8f0;font-weight:600;font-size:11px;flex:1">' + (mailUrl ? '🔗 ' : '') + (l.subject || '不明') + '</div>';
+      if (l.date) html += '<div style="color:#64748b;font-size:10px;white-space:nowrap;margin-left:8px">📅 ' + l.date + '</div>';
+      html += '</div>';
+      html += '<div style="color:' + statusColor + ';font-size:12px;font-weight:700">' + (l.status || '-') + '</div>';
+      html += '</div>';
+    });
+  });
+  debugDiv.innerHTML = html;
+}
+
 document.getElementById('btnProcess').addEventListener('click', function() {
   showToast('⏳ メール仕分け処理中...');
   this.disabled = true;
   var btn = this;
   var debugDiv = document.getElementById('debugArea');
-  if (debugDiv) debugDiv.innerHTML = '<div class="spinner"></div><div style="color:#94a3b8;text-align:center;font-size:12px;margin-top:8px">仕分け中... ' + (batchOffset + 1) + '件目〜</div>';
+  if (debugDiv) {
+    var loadingHtml = '<div class="spinner"></div><div style="color:#94a3b8;text-align:center;font-size:12px;margin-top:8px">仕分け中... ' + (batchOffset + 1) + '件目〜</div>';
+    debugDiv.innerHTML = loadingHtml;
+  }
   fetch('/api/process', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -263,27 +369,15 @@ document.getElementById('btnProcess').addEventListener('click', function() {
     btn.disabled = false;
     loadData();
     if (d.debug && debugDiv) {
-      var html = '<h2 style="font-size:13px;color:#38bdf8;margin-bottom:4px">📊 処理結果 (' + (d.processed || 0) + '/' + found + '件成功)</h2>';
-      html += '<div style="font-size:11px;color:#94a3b8;margin-bottom:8px">📬 ' + rangeStart + '〜' + rangeEnd + '件目 ｜ 残り約' + Math.max(remaining - found, 0) + '件</div>';
-      if (d.debug.logs && d.debug.logs.length > 0) {
-        d.debug.logs.forEach(function(l, i) {
-          var statusColor = '#64748b';
-          if (l.status && (l.status.includes('📄') || l.status.includes('🧾'))) statusColor = '#4ade80';
-          if (l.status && l.status.includes('⚠️')) statusColor = '#f59e0b';
-          if (l.status && l.status.includes('❌')) statusColor = '#f87171';
-          var mailUrl = l.msgId ? 'https://mail.google.com/mail/u/0/#inbox/' + l.msgId : '';
-          html += '<div class="log-item" style="border-left:3px solid ' + statusColor + ';padding-left:8px;margin-bottom:6px;cursor:' + (mailUrl ? 'pointer' : 'default') + '" ' + (mailUrl ? 'onclick="window.open(\'' + mailUrl + '\', \'_blank\')"' : '') + '>';
-          html += '<div style="display:flex;justify-content:space-between;align-items:center">';
-          html += '<div style="color:#e2e8f0;font-weight:600;font-size:11px;flex:1">' + (mailUrl ? '🔗 ' : '') + (l.subject || '不明') + '</div>';
-          if (l.date) html += '<div style="color:#64748b;font-size:10px;white-space:nowrap;margin-left:8px">📅 ' + l.date + '</div>';
-          html += '</div>';
-          html += '<div style="color:' + statusColor + ';font-size:12px;font-weight:700">' + (l.status || '-') + '</div>';
-          html += '</div>';
-        });
-      } else {
-        html += '<div style="color:#64748b;text-align:center;padding:12px">処理対象のメールなし</div>';
-      }
-      debugDiv.innerHTML = html;
+      allBatchResults.push({
+        rangeStart: rangeStart,
+        rangeEnd: rangeEnd,
+        found: found,
+        processed: d.processed || 0,
+        remaining: Math.max(remaining - found, 0),
+        logs: d.debug.logs || []
+      });
+      renderAllBatches(debugDiv);
     }
   }).catch(function(e) { showToast('❌ エラー: ' + e.message); btn.disabled = false; });
 });
@@ -308,6 +402,9 @@ document.getElementById('btnReset').addEventListener('click', function() {
   }).then(function(r) { return r.json(); }).then(function(d) {
     showToast('✅ ' + (d.message || '完了'));
     batchOffset = 0;
+    allBatchResults = [];
+    var debugDiv = document.getElementById('debugArea');
+    if (debugDiv) debugDiv.innerHTML = '';
     btn.disabled = false;
     loadData();
   }).catch(function() { showToast('❌ エラー'); btn.disabled = false; });
