@@ -234,6 +234,7 @@ ${bodyText}
 2. amount: 支払い金額（税込、数値のみ）
 
 JSON形式のみ返してください: {"makerName": "会社名", "amount": 12345}
+※見積書・見積もり・査定・概算は除外してください。実際に支払いが発生したもののみ対象です。
 購入・注文・決済・領収に関するメールでない場合: {"makerName": null, "amount": 0}`;
 
   const payload = {
@@ -382,8 +383,8 @@ async function analyzeWithGemini(apiKey, fileBase64, mimeType = 'application/pdf
 
   // モードに応じたプロンプト
   const prompt = mode === 'receipt'
-    ? 'この領収書ファイルから以下をJSON形式で返してください。\n1. makerName: 発行元の会社名・店名（株式会社等は除いた短い名前）\n2. amount: 金額（税込、数値のみ）\n\nJSON形式のみ返してください: {"makerName": "会社名", "amount": 12345}\n領収書でない場合: {"makerName": null, "amount": 0}'
-    : 'この請求書ファイルから以下をJSON形式で返してください。\n1. makerName: 請求元の会社名（株式会社等は除いた短い名前）\n2. amount: 税抜金額（数値のみ）\n\nJSON形式のみ返してください: {"makerName": "会社名", "amount": 12345}\n請求書でない場合: {"makerName": null, "amount": 0}';
+    ? 'この領収書ファイルから以下をJSON形式で返してください。\n1. makerName: 発行元の会社名・店名（株式会社等は除いた短い名前）\n2. amount: 金額（税込、数値のみ）\n\nJSON形式のみ返してください: {"makerName": "会社名", "amount": 12345}\n※見積書・見積もり・査定・概算は除外してください。実際の支払いが確認できるもののみ対象です。\n領収書でない場合: {"makerName": null, "amount": 0}'
+    : 'この請求書ファイルから以下をJSON形式で返してください。\n1. makerName: 請求元の会社名（株式会社等は除いた短い名前）\n2. amount: 税抜金額（数値のみ）\n\nJSON形式のみ返してください: {"makerName": "会社名", "amount": 12345}\n※見積書・見積もり・査定・概算は除外してください。実際の請求が確認できるもののみ対象です。\n請求書でない場合: {"makerName": null, "amount": 0}';
 
   const payload = {
     contents: [{
