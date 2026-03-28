@@ -238,7 +238,7 @@ JSON形式のみ返してください: {"makerName": "会社名", "amount": 1234
 
   const payload = {
     contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.1 }
+    generationConfig: { temperature: 0.1, thinkingConfig: { thinkingBudget: 0 } }
   };
 
   const gemRes = await fetch(url, {
@@ -392,7 +392,7 @@ async function analyzeWithGemini(apiKey, fileBase64, mimeType = 'application/pdf
         { text: prompt }
       ]
     }],
-    generationConfig: { temperature: 0.1 }
+    generationConfig: { temperature: 0.1, thinkingConfig: { thinkingBudget: 0 } }
   };
 
   const gemRes = await fetch(url, {
