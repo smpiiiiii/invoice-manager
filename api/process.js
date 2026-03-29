@@ -26,7 +26,7 @@ module.exports = async (req, res) => {
 
     // 2. Gmail統合検索（仕分け済ラベル除外）
     const processedLabel = '仕分け済';
-    const query = `-label:${processedLabel} after:2026/03/01 (has:attachment OR subject:領収 OR subject:注文 OR subject:購入 OR subject:請求 OR subject:receipt OR subject:order OR subject:invoice)`;
+    const query = `-label:${processedLabel} after:2026/03/01 (has:attachment OR subject:領収 OR subject:注文 OR subject:購入 OR subject:請求 OR subject:キャンセル OR subject:返品 OR subject:返金 OR subject:取消 OR subject:receipt OR subject:order OR subject:invoice OR subject:cancel)`;
     const gmailRes = await googleApi(token,
       `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=10`
     );
@@ -508,17 +508,25 @@ async function updateSheet(token, sheetId, makerName, amount, yearMonth) {
 
 /**
  * キャンセル処理: スプシからメーカーの該当月の金額を削除し、削除額を返す
+ * 部分一致でメーカー名を検索（「BAYCREW'S」で「BAYCREW'S STORE」もマッチ）
  */
 async function removeFromSheet(token, sheetId, makerName, yearMonth) {
   const dataRes = await googleApi(token,
     `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/A:ZZ`
   );
   const values = dataRes.values || [['メーカー名']];
+  const searchName = makerName.toLowerCase().replace(/[\s'’　]/g, '');
 
-  // メーカー行を検索
+  // メーカー行を部分一致で検索
   let rowIdx = -1;
   for (let i = 1; i < values.length; i++) {
-    if (values[i] && values[i][0] === makerName) { rowIdx = i; break; }
+    if (!values[i] || !values[i][0]) continue;
+    const sheetName = values[i][0].toLowerCase().replace(/[\s'’　]/g, '');
+    // 完全一致 or どちらかが含まれる
+    if (sheetName === searchName || sheetName.includes(searchName) || searchName.includes(sheetName)) {
+      rowIdx = i;
+      break;
+    }
   }
   if (rowIdx === -1) return 0;
 
