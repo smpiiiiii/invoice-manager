@@ -568,9 +568,9 @@ td { padding: 7px 5px; border-bottom: 1px solid #1e293b; white-space: nowrap }
     <div class="section">
       <h2>🔄 テスト用リセット</h2>
       <div style="font-size:11px;color:#94a3b8;margin-bottom:8px;line-height:1.5">
-        Gmailの「仕分け済」ラベルを削除して、再スキャンできるようにします。
+        Gmail「仕分け済」ラベル削除 + スプレッドシートのデータクリア + Driveフォルダ内のファイル全削除
       </div>
-      <button class="btn btn-outline" id="btnResetLabels" style="background:rgba(239,68,68,0.1);border-color:#ef4444;color:#ef4444">🗑️ ラベルをリセット</button>
+      <button class="btn btn-outline" id="btnResetLabels" style="background:rgba(239,68,68,0.1);border-color:#ef4444;color:#ef4444">🗑️ フルリセット</button>
       <div id="resetResult" style="margin-top:6px;font-size:11px"></div>
     </div>
 
@@ -1337,12 +1337,12 @@ document.getElementById('btnDrive').addEventListener('click', function() {
 
 // テスト用ラベルリセット
 document.getElementById('btnResetLabels').addEventListener('click', function() {
-  if (!confirm('⚠️ Gmailの「仕分け済」ラベルを全て削除します。\n再スキャン時に全メールが再処理されます。\n\n実行しますか？')) return;
+  if (!confirm('⚠️ フルリセットを実行します：\n\n① Gmailの「仕分け済」ラベルを全削除\n② スプレッドシートのデータをクリア\n③ Driveフォルダ内のファイルを全削除\n\n本当に実行しますか？')) return;
   var btn = this;
   btn.disabled = true;
   btn.textContent = '🗑️ リセット中...';
   var resultDiv = document.getElementById('resetResult');
-  resultDiv.innerHTML = '<div style="color:#94a3b8">⏳ ラベルをリセット中...</div>';
+  resultDiv.innerHTML = '<div style="color:#94a3b8">⏳ フルリセット中...（30秒ほどかかります）</div>';
 
   fetch('/api/reset-labels', {
     method: 'POST',
@@ -1356,11 +1356,11 @@ document.getElementById('btnResetLabels').addEventListener('click', function() {
       showToast('✅ ラベルリセット完了！');
     }
     btn.disabled = false;
-    btn.textContent = '🗑️ ラベルをリセット';
+    btn.textContent = '🗑️ フルリセット';
   }).catch(function(e) {
     resultDiv.innerHTML = '<div style="color:#ef4444">❌ ' + e.message + '</div>';
     btn.disabled = false;
-    btn.textContent = '🗑️ ラベルをリセット';
+    btn.textContent = '🗑️ フルリセット';
   });
 });
 
