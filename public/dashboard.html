@@ -1577,6 +1577,49 @@ function normalizeName(name) {
   // スペース・記号を除去
   n = n.replace(/[\s\-_\.・、,''""「」【】（）\(\)　]/g, '');
 
+  // ブランドエイリアス辞書（日本語名⇔英語名のマッピング）
+  var brandAliases = [
+    ['lego', 'レゴ'],
+    ['amazon', 'アマゾン'],
+    ['apple', 'アップル'],
+    ['google', 'グーグル'],
+    ['microsoft', 'マイクロソフト'],
+    ['adobe', 'アドビ'],
+    ['nike', 'ナイキ'],
+    ['rakuten', '楽天'],
+    ['yahoo', 'ヤフー'],
+    ['softbank', 'ソフトバンク'],
+    ['docomo', 'ドコモ'],
+    ['toyota', 'トヨタ'],
+    ['sony', 'ソニー'],
+    ['panasonic', 'パナソニック'],
+    ['sharp', 'シャープ'],
+    ['nintendo', '任天堂'],
+    ['starbucks', 'スターバックス'],
+    ['ikea', 'イケア'],
+    ['costco', 'コストコ'],
+    ['uniqlo', 'ユニクロ'],
+    ['daiso', 'ダイソー'],
+    ['muji', '無印'],
+    ['yamada', 'ヤマダ'],
+    ['bic', 'ビック'],
+    ['yodobashi', 'ヨドバシ'],
+  ];
+
+  // エイリアスで正規化（ブランド名を統一キーに変換）
+  for (var i = 0; i < brandAliases.length; i++) {
+    var en = brandAliases[i][0];
+    var ja = brandAliases[i][1];
+    if (n.indexOf(en) >= 0 || n.indexOf(ja) >= 0) {
+      // 英語名に統一して、サフィックス（japan, shop等）を除去
+      n = en;
+      break;
+    }
+  }
+
+  // 追加のサフィックス除去（統一後）
+  n = n.replace(/japan|ジャパン|shop|ショップ|store|ストア|online|オンライン|direct|ダイレクト/gi, '');
+
   return n;
 }
 
