@@ -25,12 +25,16 @@ module.exports = async (req, res) => {
     const driveFolderId = await ensureParentFolder(token);
 
     // 2. Gmail統合検索（仕分け済ラベル除外）
-    // 検索期間を動的に計算（デフォルト: 過去6ヶ月）
+    // 検索期間: リクエストのafterパラメータがあればそれを使用、なければ今月1日から
     const processedLabel = '仕分け済';
-    const searchMonths = 6;
-    const afterDate = new Date();
-    afterDate.setMonth(afterDate.getMonth() - searchMonths);
-    const afterStr = `${afterDate.getFullYear()}/${String(afterDate.getMonth() + 1).padStart(2, '0')}/${String(afterDate.getDate()).padStart(2, '0')}`;
+    const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+    let afterStr;
+    if (body.after) {
+      afterStr = body.after; // フロントから指定（例: "2026/03/01"）
+    } else {
+      const now = new Date();
+      afterStr = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/01`;
+    }
     const query = `-label:${processedLabel} after:${afterStr} (has:attachment OR subject:領収 OR subject:注文 OR subject:購入 OR subject:請求 OR subject:キャンセル OR subject:返品 OR subject:返金 OR subject:取消 OR subject:receipt OR subject:order OR subject:invoice OR subject:cancel)`;
     const gmailRes = await googleApi(token,
       `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=20`
@@ -105,9 +109,11 @@ module.exports = async (req, res) => {
             const docType = analysis.type === 'invoice' ? '請求書' : '領収書';
             const targetSheet = analysis.type === 'invoice' ? invoiceRes.sheetId : receiptRes.sheetId;
 
-            // タイプ別月フォルダに保存
-            const monthFolderName = `${yearMonthCompact} ${docType}`;
-            const monthFolderId = await getOrCreateTypedMonthFolder(token, driveFolderId, monthFolderName);
+            // 年フォルダ → 月フォルダに保存（例: 2026年 請求書/3月/）
+            const fileYear = mailDate.getFullYear();
+            const fileMonth = mailDate.getMonth() + 1;
+            const yearFolderId = await getOrCreateYearFolder(token, driveFolderId, fileYear, docType);
+            const monthFolderId = await getOrCreateMonthFolder(token, yearFolderId, fileMonth);
             const fileName = part.filename || `${docType}.${ext}`;
             const driveFile = await uploadToDrive(token, monthFolderId, fileName, fileBase64, mimeType);
 
@@ -401,9 +407,10 @@ async function ensureParentFolder(token) {
 }
 
 /**
- * タイプ別月フォルダ（例: "202603 請求書"）
+ * 年フォルダを取得or作成（例: "2026年 請求書"）
  */
-async function getOrCreateTypedMonthFolder(token, parentId, folderName) {
+async function getOrCreateYearFolder(token, parentId, year, docType) {
+  const folderName = `${year}年 ${docType}`;
   const searchRes = await googleApi(token,
     `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`name='${folderName}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`)}&fields=files(id)`
   );
@@ -411,6 +418,22 @@ async function getOrCreateTypedMonthFolder(token, parentId, folderName) {
 
   const created = await googleApi(token, 'https://www.googleapis.com/drive/v3/files', {
     method: 'POST', body: JSON.stringify({ name: folderName, mimeType: 'application/vnd.google-apps.folder', parents: [parentId] })
+  });
+  return created.id;
+}
+
+/**
+ * 月フォルダを取得or作成（例: "3月"）
+ */
+async function getOrCreateMonthFolder(token, yearFolderId, month) {
+  const folderName = `${month}月`;
+  const searchRes = await googleApi(token,
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`name='${folderName}' and '${yearFolderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`)}&fields=files(id)`
+  );
+  if (searchRes.files && searchRes.files.length > 0) return searchRes.files[0].id;
+
+  const created = await googleApi(token, 'https://www.googleapis.com/drive/v3/files', {
+    method: 'POST', body: JSON.stringify({ name: folderName, mimeType: 'application/vnd.google-apps.folder', parents: [yearFolderId] })
   });
   return created.id;
 }

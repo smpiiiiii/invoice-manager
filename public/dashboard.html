@@ -562,6 +562,14 @@ td { padding: 7px 5px; border-bottom: 1px solid #1e293b; white-space: nowrap }
       <button class="btn btn-outline" id="btnSheet">📊 スプレッドシートを開く</button>
       <div id="debugArea" style="margin-top:8px;max-height:300px;overflow:auto;border-radius:8px"></div>
     </div>
+    <div class="section">
+      <h2>📁 フォルダ整理</h2>
+      <div style="font-size:11px;color:#94a3b8;margin-bottom:8px;line-height:1.5">
+        Driveの旧形式フォルダ（"202603 請求書"）を新形式（"2026年 請求書/3月/"）に移行します。
+      </div>
+      <button class="btn btn-outline" id="btnMigrate" style="background:rgba(168,85,247,0.1);border-color:#a855f7;color:#a855f7">📁 フォルダを整理する</button>
+      <div id="migrateResult" style="margin-top:6px;font-size:11px"></div>
+    </div>
 
     <div class="section">
       <h2>🔍 重複検出・統合</h2>
@@ -1130,10 +1138,17 @@ function runOneBatch(callback) {
     debugDiv.innerHTML = '<div class="spinner"></div><div style="color:#94a3b8;text-align:center;font-size:12px;margin-top:8px">仕分け中... ' + (batchOffset + 1) + '件目〜</div>';
   }
 
+  // スキャン期間をダッシュボードの期間フィルターに連動
+  var afterDate = '';
+  if (dateFilter.from) {
+    var af = dateFilter.from;
+    afterDate = af.getFullYear() + '/' + String(af.getMonth() + 1).padStart(2, '0') + '/' + String(af.getDate()).padStart(2, '0');
+  }
+
   fetch('/api/process', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({})
+    body: JSON.stringify({ after: afterDate })
   }).then(function(r) { return r.json(); }).then(function(d) {
     var found = (d.debug && d.debug.found) || 0;
     var remaining = (d.debug && d.debug.totalRemaining) || 0;
@@ -1245,7 +1260,42 @@ document.getElementById('btnSheet').addEventListener('click', function() {
   else showToast('スプレッドシートがまだありません');
 });
 
+// フォルダ整理（旧形式→新形式に移行）
+document.getElementById('btnMigrate').addEventListener('click', function() {
+  if (!confirm('Driveのフォルダ構造を整理します。\n旧形式（202603 請求書）→ 新形式（2026年 請求書/3月/）\n\n実行しますか？')) return;
+  var btn = this;
+  btn.disabled = true;
+  btn.textContent = '📁 整理中...';
+  var resultDiv = document.getElementById('migrateResult');
+  resultDiv.innerHTML = '<div style="color:#94a3b8">⏳ フォルダを整理中...</div>';
 
+  fetch('/api/migrate-folders', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({})
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    if (d.error) {
+      resultDiv.innerHTML = '<div style="color:#ef4444">❌ ' + d.error + '</div>';
+    } else {
+      var html = '<div style="color:#22c55e;font-weight:700">✅ ' + d.message + '</div>';
+      if (d.details && d.details.length > 0) {
+        html += '<div style="margin-top:4px">';
+        d.details.forEach(function(item) {
+          html += '<div style="color:#94a3b8;font-size:10px">📂 ' + item.old + ' → ' + item.new + ' (' + item.files + '件)</div>';
+        });
+        html += '</div>';
+      }
+      resultDiv.innerHTML = html;
+      showToast('✅ フォルダ整理完了！');
+    }
+    btn.disabled = false;
+    btn.textContent = '📁 フォルダを整理する';
+  }).catch(function(e) {
+    resultDiv.innerHTML = '<div style="color:#ef4444">❌ エラー: ' + e.message + '</div>';
+    btn.disabled = false;
+    btn.textContent = '📁 フォルダを整理する';
+  });
+});
 
 // Refresh Token コピー（自動処理用）
 document.getElementById('btnCopyToken').addEventListener('click', function() {
