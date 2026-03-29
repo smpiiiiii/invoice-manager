@@ -1014,6 +1014,10 @@ function renderTable(data) {
       var v = (row[c] !== undefined && row[c] !== null) ? row[c] : '';
       if (c > 0 && typeof v === 'number' && v > 0) return '<td style="color:#34d399;font-weight:700">¥' + v.toLocaleString() + '</td>';
       if (c > 0 && parseInt(v) > 0) return '<td style="color:#34d399;font-weight:700">¥' + parseInt(v).toLocaleString() + '</td>';
+      if (c === 0 && v) {
+        var gmailUrl = 'https://mail.google.com/mail/u/0/#search/' + encodeURIComponent(v);
+        return '<td style="cursor:pointer" onclick="window.open(\'' + gmailUrl + '\', \'_blank\')"><span style="color:#38bdf8;text-decoration:underline">🔗 ' + v + '</span></td>';
+      }
       return '<td>' + v + '</td>';
     }).join('') + '</tr>';
   }).join('') + '</tbody>';
@@ -1047,7 +1051,10 @@ document.querySelectorAll('.stat-card').forEach(function(card) {
           for (var c = 1; c < filtered.tableData[r].length; c++) {
             var val = parseInt(filtered.tableData[r][c]) || 0;
             if (val > 0) {
-              html += '<div class="modal-item"><span style="color:#e2e8f0">' + name + ' (' + (months[c-1]||'') + ')</span><span style="color:#4ade80;font-weight:700">¥' + val.toLocaleString() + '</span></div>';
+              var gmailSearch = 'https://mail.google.com/mail/u/0/#search/' + encodeURIComponent(name);
+              html += '<div class="modal-item" style="cursor:pointer" onclick="window.open(\'' + gmailSearch + '\', \'_blank\')">';
+              html += '<span style="color:#e2e8f0">🔗 ' + name + ' (' + (months[c-1]||'') + ')</span>';
+              html += '<span style="color:#4ade80;font-weight:700">¥' + val.toLocaleString() + '</span></div>';
             }
           }
         }
@@ -1057,7 +1064,10 @@ document.querySelectorAll('.stat-card').forEach(function(card) {
       if (filtered.topMakers && filtered.topMakers.length > 0) {
         filtered.topMakers.forEach(function(m) {
           var pct = filtered.totalAmount > 0 ? Math.round(m.amount / filtered.totalAmount * 100) : 0;
-          html += '<div class="modal-item"><span style="color:#e2e8f0">' + m.name + '</span><span style="color:#fbbf24;font-weight:700">¥' + m.amount.toLocaleString() + ' (' + pct + '%)</span></div>';
+          var gmailSearch = 'https://mail.google.com/mail/u/0/#search/' + encodeURIComponent(m.name);
+          html += '<div class="modal-item" style="cursor:pointer" onclick="window.open(\'' + gmailSearch + '\', \'_blank\')">';
+          html += '<span style="color:#e2e8f0">🔗 ' + m.name + '</span>';
+          html += '<span style="color:#fbbf24;font-weight:700">¥' + m.amount.toLocaleString() + ' (' + pct + '%)</span></div>';
         });
         html += '<div class="modal-item" style="border-top:2px solid #334155;margin-top:6px;padding-top:8px"><span style="color:#94a3b8;font-weight:700">合計</span><span style="color:#4ade80;font-weight:900">¥' + (filtered.totalAmount||0).toLocaleString() + '</span></div>';
       } else { html += '<div style="color:#64748b">データなし</div>'; }
@@ -1070,7 +1080,10 @@ document.querySelectorAll('.stat-card').forEach(function(card) {
           return { name: r[0], amount: total };
         }).filter(function(m) { return m.amount > 0; }).sort(function(a,b) { return b.amount - a.amount; }) : filtered.topMakers;
         allMakers.forEach(function(m, i) {
-          html += '<div class="modal-item"><span style="color:#e2e8f0">' + (i+1) + '. ' + m.name + '</span><span style="color:#4ade80;font-weight:700">¥' + m.amount.toLocaleString() + '</span></div>';
+          var gmailSearch = 'https://mail.google.com/mail/u/0/#search/' + encodeURIComponent(m.name);
+          html += '<div class="modal-item" style="cursor:pointer" onclick="window.open(\'' + gmailSearch + '\', \'_blank\')">';
+          html += '<span style="color:#e2e8f0">🔗 ' + (i+1) + '. ' + m.name + '</span>';
+          html += '<span style="color:#4ade80;font-weight:700">¥' + m.amount.toLocaleString() + '</span></div>';
         });
       } else { html += '<div style="color:#64748b">データなし</div>'; }
     } else if (stat === 'month') {
