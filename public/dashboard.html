@@ -562,11 +562,7 @@ td { padding: 7px 5px; border-bottom: 1px solid #1e293b; white-space: nowrap }
       <button class="btn btn-outline" id="btnSheet">📊 スプレッドシートを開く</button>
       <div id="debugArea" style="margin-top:8px;max-height:300px;overflow:auto;border-radius:8px"></div>
     </div>
-    <div class="section">
-      <h2>🔧 メンテナンス</h2>
-      <button class="btn btn-warning" id="btnReset">🔄 処理済みラベルをリセット</button>
-      <div style="font-size:10px;color:#64748b;margin:-2px 0 6px;text-align:center">同じメールを再処理したい場合に使用</div>
-    </div>
+
     <div class="section">
       <h2>🔍 重複検出・統合</h2>
       <div style="font-size:11px;color:#94a3b8;margin-bottom:8px;line-height:1.5">
@@ -1249,25 +1245,7 @@ document.getElementById('btnSheet').addEventListener('click', function() {
   else showToast('スプレッドシートがまだありません');
 });
 
-// ラベルリセット（統合）
-document.getElementById('btnReset').addEventListener('click', function() {
-  showToast('🔄 仕分けラベルリセット中...');
-  this.disabled = true;
-  var btn = this;
-  fetch('/api/reset-labels', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({})
-  }).then(function(r) { return r.json(); }).then(function(d) {
-    showToast('✅ ' + (d.message || '完了'));
-    batchOffset = 0;
-    allBatchResults = [];
-    var debugDiv = document.getElementById('debugArea');
-    if (debugDiv) debugDiv.innerHTML = '';
-    btn.disabled = false;
-    loadData();
-  }).catch(function() { showToast('❌ エラー'); btn.disabled = false; });
-});
+
 
 // Refresh Token コピー（自動処理用）
 document.getElementById('btnCopyToken').addEventListener('click', function() {
