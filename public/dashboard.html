@@ -1160,9 +1160,32 @@ function setProcessButtonsState(processing) {
 // 1バッチ処理を実行する共通関数
 function runOneBatch(callback) {
   var debugDiv = document.getElementById('debugArea');
+  var startTime = Date.now();
   if (debugDiv && !isAutoProcessing) {
-    debugDiv.innerHTML = '<div class="spinner"></div><div style="color:#94a3b8;text-align:center;font-size:12px;margin-top:8px">仕分け中... ' + (batchOffset + 1) + '件目〜</div>';
+    debugDiv.innerHTML = '<div style="text-align:center;padding:20px">' +
+      '<div class="spinner"></div>' +
+      '<div style="color:#38bdf8;font-size:14px;font-weight:700;margin-top:12px">📧 メールを解析中...</div>' +
+      '<div style="color:#94a3b8;font-size:11px;margin-top:4px">' + (batchOffset + 1) + '件目〜 20件をスキャン</div>' +
+      '<div id="elapsedTime" style="color:#64748b;font-size:10px;margin-top:6px">⏱️ 0秒経過</div>' +
+      '</div>';
+  } else if (debugDiv && isAutoProcessing) {
+    // 連続処理中は上部にローディング行を挿入
+    var loadingHtml = '<div style="text-align:center;padding:10px;background:rgba(56,189,248,0.05);border:1px solid rgba(56,189,248,0.2);border-radius:8px;margin-bottom:8px">' +
+      '<div class="spinner" style="width:20px;height:20px;border-width:2px"></div>' +
+      '<div style="color:#38bdf8;font-size:12px;font-weight:600;margin-top:6px">📧 バッチ ' + (allBatchResults.length + 1) + ' 処理中... (' + (batchOffset + 1) + '件目〜)</div>' +
+      '<div id="elapsedTime" style="color:#64748b;font-size:10px;margin-top:4px">⏱️ 0秒経過</div>' +
+      '</div>';
+    debugDiv.insertAdjacentHTML('afterbegin', loadingHtml);
   }
+
+  // 経過時間カウンター
+  var elapsedInterval = setInterval(function() {
+    var el = document.getElementById('elapsedTime');
+    if (el) {
+      var sec = Math.floor((Date.now() - startTime) / 1000);
+      el.textContent = '⏱️ ' + sec + '秒経過';
+    }
+  }, 1000);
 
   // スキャン期間をダッシュボードの期間フィルターに連動
   var afterDate = '';
@@ -1184,6 +1207,7 @@ function runOneBatch(callback) {
     totalProcessedCount += (d.processed || 0);
 
     if (d.debug && debugDiv) {
+      clearInterval(elapsedInterval);
       allBatchResults.push({
         rangeStart: rangeStart,
         rangeEnd: rangeEnd,
@@ -1197,6 +1221,7 @@ function runOneBatch(callback) {
 
     callback(null, { found: found, remaining: remaining, processed: d.processed || 0 });
   }).catch(function(e) {
+    clearInterval(elapsedInterval);
     callback(e);
   });
 }
