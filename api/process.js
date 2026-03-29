@@ -118,6 +118,20 @@ module.exports = async (req, res) => {
             logEntry.type = analysis.type;
             processed++;
             hasProcessedSomething = true;
+          } else if (analysis && analysis.type === 'cancel' && analysis.makerName) {
+            // キャンセル処理: 両方のシートから削除試行
+            const removed1 = await removeFromSheet(token, invoiceRes.sheetId, analysis.makerName, yearMonth);
+            const removed2 = await removeFromSheet(token, receiptRes.sheetId, analysis.makerName, yearMonth);
+            const removedAmt = removed1 + removed2;
+            if (removedAmt > 0) {
+              results.push({ maker: analysis.makerName, amount: -removedAmt, month: yearMonth, type: 'キャンセル' });
+              logEntry.status = `❌ キャンセル → ${analysis.makerName} -¥${removedAmt.toLocaleString()}`;
+            } else {
+              logEntry.status = `❌ キャンセル → ${analysis.makerName}（元データなし）`;
+            }
+            logEntry.type = 'cancel';
+            processed++;
+            hasProcessedSomething = true;
           } else {
             logEntry.status = '⏭️ 該当なし';
           }
@@ -140,6 +154,19 @@ module.exports = async (req, res) => {
               results.push({ maker: analysis.makerName, amount: analysis.amount, month: yearMonth, type: docType, source: 'メール本文' });
               logEntry.status = `${docType === '請求書' ? '📄' : '🧾'} ${docType} → ${analysis.makerName} ¥${analysis.amount.toLocaleString()}`;
               logEntry.type = analysis.type;
+              processed++;
+              hasProcessedSomething = true;
+            } else if (analysis && analysis.type === 'cancel' && analysis.makerName) {
+              const removed1 = await removeFromSheet(token, invoiceRes.sheetId, analysis.makerName, yearMonth);
+              const removed2 = await removeFromSheet(token, receiptRes.sheetId, analysis.makerName, yearMonth);
+              const removedAmt = removed1 + removed2;
+              if (removedAmt > 0) {
+                results.push({ maker: analysis.makerName, amount: -removedAmt, month: yearMonth, type: 'キャンセル', source: 'メール本文' });
+                logEntry.status = `❌ キャンセル → ${analysis.makerName} -¥${removedAmt.toLocaleString()}`;
+              } else {
+                logEntry.status = `❌ キャンセル → ${analysis.makerName}（元データなし）`;
+              }
+              logEntry.type = 'cancel';
               processed++;
               hasProcessedSomething = true;
             } else {
@@ -225,7 +252,7 @@ function extractEmailBody(msg) {
  */
 async function analyzeBodyWithGemini(apiKey, subject, fromAddr, bodyText) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-  const prompt = `以下はメールの件名・差出人・本文です。このメールが「請求書」「領収書（購入・注文・決済・領収）」のどちらかに該当するか判定し、情報を抽出してください。
+  const prompt = `以下はメールの件名・差出人・本文です。このメールが「請求書」「領収書（購入・注文・決済・領収）」または「キャンセル・返金」のどれかに該当するか判定し、情報を抽出してください。
 
 件名: ${subject}
 差出人: ${fromAddr}
@@ -233,12 +260,13 @@ async function analyzeBodyWithGemini(apiKey, subject, fromAddr, bodyText) {
 ${bodyText}
 
 以下をJSON形式のみで返してください:
-1. type: "invoice"(請求書) または "receipt"(領収書・購入・注文・決済) または "none"(該当なし)
+1. type: "invoice"(請求書) or "receipt"(領収書・購入・注文・決済) or "cancel"(キャンセル・返金・取消) or "none"(該当なし)
 2. makerName: 店舗名・サービス名・会社名（短い名前）
-3. amount: 金額（請求書なら税抜き、領収書なら税込み、数値のみ）
+3. amount: 金額（請求書なら税抜き、領収書なら税込み、キャンセルなら0、数値のみ）
 
 JSON形式のみ返してください: {"type": "receipt", "makerName": "会社名", "amount": 12345}
-※見積書・見積もり・査定・概算・クーポン・お知らせ・通知のみのメールは除外。実際に支払いが発生または請求されたもののみ対象。
+※見積書・概算・クーポン・お知らせのみのメールは除外。
+※注文・商品のキャンセル・返品・返金のメールは type:"cancel" で返してください。
 該当なしの場合: {"type": "none", "makerName": null, "amount": 0}`;
 
   const payload = {
@@ -476,4 +504,41 @@ async function updateSheet(token, sheetId, makerName, amount, yearMonth) {
     `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/A1?valueInputOption=USER_ENTERED`,
     { method: 'PUT', body: JSON.stringify({ values }) }
   );
+}
+
+/**
+ * キャンセル処理: スプシからメーカーの該当月の金額を削除し、削除額を返す
+ */
+async function removeFromSheet(token, sheetId, makerName, yearMonth) {
+  const dataRes = await googleApi(token,
+    `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/A:ZZ`
+  );
+  const values = dataRes.values || [['メーカー名']];
+
+  // メーカー行を検索
+  let rowIdx = -1;
+  for (let i = 1; i < values.length; i++) {
+    if (values[i] && values[i][0] === makerName) { rowIdx = i; break; }
+  }
+  if (rowIdx === -1) return 0;
+
+  // 年月列を検索
+  let colIdx = -1;
+  for (let j = 1; j < values[0].length; j++) {
+    if (values[0][j] === yearMonth) { colIdx = j; break; }
+  }
+  if (colIdx === -1) return 0;
+
+  const existing = parseInt(values[rowIdx][colIdx]) || 0;
+  if (existing <= 0) return 0;
+
+  // 金額を0にする
+  values[rowIdx][colIdx] = '';
+
+  await googleApi(token,
+    `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/A1?valueInputOption=USER_ENTERED`,
+    { method: 'PUT', body: JSON.stringify({ values }) }
+  );
+
+  return existing;
 }
