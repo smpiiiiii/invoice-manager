@@ -37,7 +37,7 @@ module.exports = async (req, res) => {
     }
     const query = `-label:${processedLabel} after:${afterStr} (has:attachment OR subject:領収 OR subject:注文 OR subject:購入 OR subject:請求 OR subject:キャンセル OR subject:返品 OR subject:返金 OR subject:取消 OR subject:receipt OR subject:order OR subject:invoice OR subject:cancel)`;
     const gmailRes = await googleApi(token,
-      `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=20`
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=8`
     );
     const totalRemaining = gmailRes.resultSizeEstimate || 0;
 
@@ -70,7 +70,16 @@ module.exports = async (req, res) => {
       return { _error: 'レート制限超過（リトライ失敗）' };
     }
 
+    // タイムアウトガード（50秒で強制中断）
+    const startTime = Date.now();
+    const TIMEOUT_MS = 50000;
+
     for (const msgId of messageIds) {
+      // タイムアウトチェック
+      if (Date.now() - startTime > TIMEOUT_MS) {
+        debugLogs.push({ subject: '⏱️ タイムアウト', status: '⚠️ 残りは次のバッチで処理します', type: '' });
+        break;
+      }
       try {
         const msg = await googleApi(token,
           `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}?format=full`

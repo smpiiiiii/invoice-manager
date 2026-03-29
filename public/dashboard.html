@@ -545,7 +545,7 @@ td { padding: 7px 5px; border-bottom: 1px solid #1e293b; white-space: nowrap }
     <div class="section">
       <h2>⚡ 手動操作</h2>
       <div style="display:flex;gap:6px;margin-bottom:6px">
-        <button class="btn btn-primary" id="btnProcess" style="flex:1;margin-bottom:0">▶️ 20件処理</button>
+        <button class="btn btn-primary" id="btnProcess" style="flex:1;margin-bottom:0">▶️ 8件処理</button>
         <button class="btn btn-success" id="btnProcessAll" style="flex:1;margin-bottom:0">🔄 全件連続処理</button>
       </div>
       <button class="btn btn-outline hidden" id="btnStopProcess" style="background:rgba(239,68,68,0.1);border-color:#ef4444;color:#ef4444">⏹️ 処理を停止</button>
@@ -1186,11 +1186,16 @@ function runOneBatch(callback) {
     afterDate = af.getFullYear() + '/' + String(af.getMonth() + 1).padStart(2, '0') + '/' + String(af.getDate()).padStart(2, '0');
   }
 
+  // フロント側タイムアウト（65秒）
+  var controller = new AbortController();
+  var fetchTimeout = setTimeout(function() { controller.abort(); }, 65000);
+
   fetch('/api/process', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ after: afterDate })
-  }).then(function(r) { return r.json(); }).then(function(d) {
+    body: JSON.stringify({ after: afterDate }),
+    signal: controller.signal
+  }).then(function(r) { clearTimeout(fetchTimeout); return r.json(); }).then(function(d) {
     var found = (d.debug && d.debug.found) || 0;
     var remaining = (d.debug && d.debug.totalRemaining) || 0;
     var rangeStart = batchOffset + 1;
@@ -1214,6 +1219,17 @@ function runOneBatch(callback) {
     callback(null, { found: found, remaining: remaining, processed: d.processed || 0 });
   }).catch(function(e) {
     clearInterval(elapsedInterval);
+    clearTimeout(fetchTimeout);
+    if (e.name === 'AbortError') {
+      // タイムアウト：処理済みのラベルは付いているので次のバッチで自動的に続行可能
+      if (debugDiv) {
+        debugDiv.innerHTML = '<div style="text-align:center;padding:16px;color:#f59e0b">' +
+          '<div style="font-size:14px;font-weight:700">⏱️ タイムアウト</div>' +
+          '<div style="font-size:11px;margin-top:4px">サーバー処理に時間がかかりました。処理済みのメールはスキップされます。</div>' +
+          '<div style="font-size:11px;margin-top:2px">もう一度ボタンを押して続行してください。</div>' +
+          '</div>';
+      }
+    }
     callback(e);
   });
 }
