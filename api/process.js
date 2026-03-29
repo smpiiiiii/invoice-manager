@@ -25,10 +25,15 @@ module.exports = async (req, res) => {
     const driveFolderId = await ensureParentFolder(token);
 
     // 2. Gmail統合検索（仕分け済ラベル除外）
+    // 検索期間を動的に計算（デフォルト: 過去6ヶ月）
     const processedLabel = '仕分け済';
-    const query = `-label:${processedLabel} after:2026/03/01 (has:attachment OR subject:領収 OR subject:注文 OR subject:購入 OR subject:請求 OR subject:キャンセル OR subject:返品 OR subject:返金 OR subject:取消 OR subject:receipt OR subject:order OR subject:invoice OR subject:cancel)`;
+    const searchMonths = 6;
+    const afterDate = new Date();
+    afterDate.setMonth(afterDate.getMonth() - searchMonths);
+    const afterStr = `${afterDate.getFullYear()}/${String(afterDate.getMonth() + 1).padStart(2, '0')}/${String(afterDate.getDate()).padStart(2, '0')}`;
+    const query = `-label:${processedLabel} after:${afterStr} (has:attachment OR subject:領収 OR subject:注文 OR subject:購入 OR subject:請求 OR subject:キャンセル OR subject:返品 OR subject:返金 OR subject:取消 OR subject:receipt OR subject:order OR subject:invoice OR subject:cancel)`;
     const gmailRes = await googleApi(token,
-      `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=10`
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=20`
     );
     const totalRemaining = gmailRes.resultSizeEstimate || 0;
 

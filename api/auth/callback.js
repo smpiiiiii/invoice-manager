@@ -2,6 +2,8 @@
  * Google OAuth認証 — コールバック
  * 認可コード → アクセストークン取得 → Cookie保存 → ダッシュボードにリダイレクト
  */
+const { encryptSession } = require('../session-crypto');
+
 module.exports = async (req, res) => {
   const { code, error } = req.query;
 
@@ -48,7 +50,7 @@ module.exports = async (req, res) => {
     });
     const userInfo = await userRes.json();
 
-    // トークンをJSON化してBase64エンコード → Cookie保存
+    // セッションデータを構築
     const sessionData = {
       access_token: tokenData.access_token,
       refresh_token: tokenData.refresh_token,
@@ -57,7 +59,9 @@ module.exports = async (req, res) => {
       name: userInfo.name,
       picture: userInfo.picture
     };
-    const encoded = Buffer.from(JSON.stringify(sessionData)).toString('base64');
+
+    // AES暗号化してCookieに保存（SESSION_SECRET未設定時はBase64フォールバック）
+    const encoded = encryptSession(sessionData);
 
     // HttpOnly Cookie設定（7日間、secure）
     const cookie = `inv_session=${encoded}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800` +
