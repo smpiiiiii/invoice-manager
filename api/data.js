@@ -81,9 +81,16 @@ module.exports = async (req, res) => {
     const invoice = calcStats(invoiceData.values || []);
     const receipt = calcStats(receiptData.values || []);
 
+    // Driveフォルダのリンクを取得
+    const driveFolderSearch = await googleApi(token,
+      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent("name='📂 請求書・領収書管理' and mimeType='application/vnd.google-apps.folder' and trashed=false")}&fields=files(id)`
+    );
+    const driveFolderId = (driveFolderSearch.files && driveFolderSearch.files.length > 0) ? driveFolderSearch.files[0].id : null;
+
     res.json({
       invoice: { ...invoice, sheetUrl: invoiceSheetId ? `https://docs.google.com/spreadsheets/d/${invoiceSheetId}` : '' },
       receipt: { ...receipt, sheetUrl: receiptSheetId ? `https://docs.google.com/spreadsheets/d/${receiptSheetId}` : '' },
+      driveUrl: driveFolderId ? `https://drive.google.com/drive/folders/${driveFolderId}` : '',
       user: { email: session.email, name: session.name, picture: session.picture }
     });
   } catch (e) {

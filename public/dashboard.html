@@ -559,7 +559,10 @@ td { padding: 7px 5px; border-bottom: 1px solid #1e293b; white-space: nowrap }
           <div id="progressBar" style="height:100%;background:linear-gradient(90deg,#38bdf8,#818cf8);border-radius:2px;transition:width .3s;width:0%"></div>
         </div>
       </div>
-      <button class="btn btn-outline" id="btnSheet">📊 スプレッドシートを開く</button>
+      <div style="display:flex;gap:6px;margin-bottom:6px">
+        <button class="btn btn-outline" id="btnSheet" style="flex:1;margin-bottom:0">📊 スプレッドシートを開く</button>
+        <button class="btn btn-outline" id="btnDrive" style="flex:1;margin-bottom:0;border-color:#f59e0b;color:#f59e0b;background:rgba(245,158,11,0.1)">📂 Driveフォルダを開く</button>
+      </div>
       <div id="debugArea" style="margin-top:8px;max-height:300px;overflow:auto;border-radius:8px"></div>
     </div>
     <div class="section">
@@ -1258,6 +1261,12 @@ document.getElementById('btnSheet').addEventListener('click', function() {
   var d = currentMode === 'receipt' ? allData.receipt : allData.invoice;
   if (d && d.sheetUrl) window.open(d.sheetUrl, '_blank');
   else showToast('スプレッドシートがまだありません');
+});
+
+// Driveフォルダを開く
+document.getElementById('btnDrive').addEventListener('click', function() {
+  if (allData && allData.driveUrl) window.open(allData.driveUrl, '_blank');
+  else showToast('Driveフォルダがまだありません');
 });
 
 // フォルダ整理（旧形式→新形式に移行）

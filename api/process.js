@@ -84,7 +84,8 @@ module.exports = async (req, res) => {
         const attachParts = getDocAttachments(msg);
 
         const dateStr = mailDate.getFullYear() + '/' + String(mailDate.getMonth() + 1).padStart(2, '0') + '/' + String(mailDate.getDate()).padStart(2, '0');
-        const logEntry = { subject: subject.substring(0, 60), from: fromAddr.substring(0, 40), date: dateStr, msgId: msg.threadId || msgId, attachments: attachParts.length, status: '', type: '' };
+        const mailUrl = `https://mail.google.com/mail/u/0/#inbox/${msg.threadId || msgId}`;
+        const logEntry = { subject: subject.substring(0, 60), from: fromAddr.substring(0, 40), date: dateStr, msgId: msg.threadId || msgId, mailUrl, attachments: attachParts.length, status: '', type: '' };
         let hasProcessedSomething = false;
         let hitRateLimit = false;
 
