@@ -451,11 +451,16 @@ td { padding: 7px 5px; border-bottom: 1px solid #1e293b; white-space: nowrap }
       <span class="date-range-label" id="dateRangeLabel">今月</span>
     </div>
     <div class="preset-btns" id="presetBtns">
-      <button class="preset-btn" data-preset="all">全期間</button>
       <button class="preset-btn active" data-preset="thisMonth">今月</button>
-      <button class="preset-btn" data-preset="3months">3ヶ月</button>
-      <button class="preset-btn" data-preset="6months">半年</button>
-      <button class="preset-btn" data-preset="1year">1年</button>
+      <script>
+        // 現在年から3年分のボタンを動的生成
+        (function() {
+          var y = new Date().getFullYear();
+          for (var i = 0; i < 3; i++) {
+            document.write('<button class="preset-btn" data-preset="year-' + (y - i) + '">' + (y - i) + '年</button>');
+          }
+        })();
+      </script>
       <button class="preset-btn" data-preset="custom">📅 カスタム</button>
     </div>
     <div class="custom-date-inputs" id="customDateInputs">
@@ -685,21 +690,19 @@ document.querySelectorAll('.preset-btn').forEach(function(btn) {
     var now = new Date();
     var today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
-    if (preset === 'all') {
-      dateFilter.from = null;
-      dateFilter.to = null;
-    } else if (preset === 'thisMonth') {
+    if (preset === 'thisMonth') {
       dateFilter.from = new Date(now.getFullYear(), now.getMonth(), 1);
       dateFilter.to = today;
-    } else if (preset === '3months') {
-      dateFilter.from = new Date(now.getFullYear(), now.getMonth() - 2, 1);
-      dateFilter.to = today;
-    } else if (preset === '6months') {
-      dateFilter.from = new Date(now.getFullYear(), now.getMonth() - 5, 1);
-      dateFilter.to = today;
-    } else if (preset === '1year') {
-      dateFilter.from = new Date(now.getFullYear() - 1, now.getMonth(), 1);
-      dateFilter.to = today;
+    } else if (preset.startsWith('year-')) {
+      // 年単位フィルター（例: year-2026 → 2026/1/1〜2026/12/31）
+      var year = parseInt(preset.split('-')[1]);
+      dateFilter.from = new Date(year, 0, 1);
+      // 今年なら今日まで、過去の年なら12/31まで
+      if (year === now.getFullYear()) {
+        dateFilter.to = today;
+      } else {
+        dateFilter.to = new Date(year, 11, 31);
+      }
     }
 
     updateDateLabel();
@@ -733,8 +736,10 @@ document.getElementById('dateApplyBtn').addEventListener('click', function() {
 // 期間ラベルの更新
 function updateDateLabel() {
   var label = document.getElementById('dateRangeLabel');
-  if (dateFilter.preset === 'all') {
-    label.textContent = '全期間';
+  if (dateFilter.preset === 'thisMonth') {
+    label.textContent = '今月';
+  } else if (dateFilter.preset && dateFilter.preset.startsWith('year-')) {
+    label.textContent = dateFilter.preset.split('-')[1] + '年';
   } else if (dateFilter.from && dateFilter.to) {
     var from = formatDateShort(dateFilter.from);
     var to = formatDateShort(dateFilter.to);
