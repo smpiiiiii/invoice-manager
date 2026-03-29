@@ -582,25 +582,7 @@ td { padding: 7px 5px; border-bottom: 1px solid #1e293b; white-space: nowrap }
       <button class="btn btn-primary" id="btnDetectDups" style="background:linear-gradient(135deg,#7c3aed,#6d28d9)">🔍 重複を検出</button>
       <div id="dupResults" style="margin-top:8px;max-height:400px;overflow:auto"></div>
     </div>
-    <div class="section">
-      <h2>🤖 自動処理設定</h2>
-      <div style="font-size:11px;color:#94a3b8;margin-bottom:8px;line-height:1.6">
-        毎日自動でメールを処理します。<br>
-        下のボタンでトークンをコピーし、Vercelの環境変数 <code style="background:#0f172a;padding:2px 6px;border-radius:4px;color:#38bdf8">CRON_REFRESH_TOKEN</code> に設定してください。
-      </div>
-      <button class="btn btn-success" id="btnCopyToken">📋 Refresh Token をコピー</button>
-      <div style="font-size:10px;color:#64748b;margin:-2px 0 8px;text-align:center">Vercel ダッシュボード → Settings → Environment Variables に貼り付け</div>
-      <div style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:10px;font-size:10px;color:#64748b;line-height:1.7">
-        <div style="color:#38bdf8;font-weight:700;margin-bottom:4px">📝 設定手順:</div>
-        <div>1️⃣ 上のボタンでトークンをコピー</div>
-        <div>2️⃣ <a href="https://vercel.com/dashboard" target="_blank" style="color:#818cf8">Vercel Dashboard</a> → プロジェクト → Settings</div>
-        <div>3️⃣ Environment Variables に追加:<br>
-          <code style="color:#4ade80;margin-left:16px">CRON_REFRESH_TOKEN = (コピーしたトークン)</code><br>
-          <code style="color:#4ade80;margin-left:16px">CRON_SECRET = (任意のランダム文字列)</code>
-        </div>
-        <div>4️⃣ 再デプロイすれば毎日18時に自動処理 🎉</div>
-      </div>
-    </div>
+
     <div class="section">
       <h2>👤 アカウント</h2>
       <button class="btn btn-outline" onclick="document.cookie='inv_session=;Path=/;Max-Age=0';location.href='/api/auth/login'">🚪 ログアウト</button>
@@ -1015,8 +997,18 @@ function renderTable(data) {
       if (c > 0 && typeof v === 'number' && v > 0) return '<td style="color:#34d399;font-weight:700">¥' + v.toLocaleString() + '</td>';
       if (c > 0 && parseInt(v) > 0) return '<td style="color:#34d399;font-weight:700">¥' + parseInt(v).toLocaleString() + '</td>';
       if (c === 0 && v) {
-        var gmailUrl = 'https://mail.google.com/mail/u/0/#search/' + encodeURIComponent(v);
-        return '<td style="cursor:pointer" onclick="window.open(\'' + gmailUrl + '\', \'_blank\')"><span style="color:#38bdf8;text-decoration:underline">🔗 ' + v + '</span></td>';
+        var detailMailUrl = '';
+        var dd = allData && (currentMode === 'receipt' ? allData.receipt : allData.invoice);
+        if (dd && dd.details && dd.details.length > 1) {
+          for (var ddi = 1; ddi < dd.details.length; ddi++) {
+            if ((dd.details[ddi][1] || '').trim() === v && (dd.details[ddi][5] || '').trim()) {
+              detailMailUrl = dd.details[ddi][5].trim();
+              break;
+            }
+          }
+        }
+        var linkUrl = detailMailUrl || ('https://mail.google.com/mail/u/0/#search/' + encodeURIComponent(v));
+        return '<td style="cursor:pointer" onclick="window.open(\'' + linkUrl + '\', \'_blank\')"><span style="color:#38bdf8;text-decoration:underline">🔗 ' + v + '</span></td>';
       }
       return '<td>' + v + '</td>';
     }).join('') + '</tr>';
@@ -1036,6 +1028,24 @@ document.querySelectorAll('.stat-card').forEach(function(card) {
     // フィルタ適用済みデータを使用
     var filtered = applyDateFilter(d);
 
+    // 明細データから取引先名→メールリンクのマップを構築
+    var mailLinks = {};
+    if (d.details && d.details.length > 1) {
+      for (var di = 1; di < d.details.length; di++) {
+        var detailRow = d.details[di];
+        var dName = (detailRow[1] || '').trim();
+        var dMailUrl = (detailRow[5] || '').trim();
+        if (dName && dMailUrl && !mailLinks[dName]) {
+          mailLinks[dName] = dMailUrl;
+        }
+      }
+    }
+    // メールリンク取得関数（明細にあればピンポイント、なければGmail検索）
+    function getMailUrl(name) {
+      if (mailLinks[name]) return mailLinks[name];
+      return 'https://mail.google.com/mail/u/0/#search/' + encodeURIComponent(name);
+    }
+
     var modal = document.getElementById('statModal');
     var content = document.getElementById('statModalContent');
     var modeIcon = currentMode === 'receipt' ? '🧾' : '📄';
@@ -1051,8 +1061,8 @@ document.querySelectorAll('.stat-card').forEach(function(card) {
           for (var c = 1; c < filtered.tableData[r].length; c++) {
             var val = parseInt(filtered.tableData[r][c]) || 0;
             if (val > 0) {
-              var gmailSearch = 'https://mail.google.com/mail/u/0/#search/' + encodeURIComponent(name);
-              html += '<div class="modal-item" style="cursor:pointer" onclick="window.open(\'' + gmailSearch + '\', \'_blank\')">';
+              var mailLink = getMailUrl(name);
+              html += '<div class="modal-item" style="cursor:pointer" onclick="window.open(\'' + mailLink + '\', \'_blank\')">';
               html += '<span style="color:#e2e8f0">🔗 ' + name + ' (' + (months[c-1]||'') + ')</span>';
               html += '<span style="color:#4ade80;font-weight:700">¥' + val.toLocaleString() + '</span></div>';
             }
@@ -1064,8 +1074,8 @@ document.querySelectorAll('.stat-card').forEach(function(card) {
       if (filtered.topMakers && filtered.topMakers.length > 0) {
         filtered.topMakers.forEach(function(m) {
           var pct = filtered.totalAmount > 0 ? Math.round(m.amount / filtered.totalAmount * 100) : 0;
-          var gmailSearch = 'https://mail.google.com/mail/u/0/#search/' + encodeURIComponent(m.name);
-          html += '<div class="modal-item" style="cursor:pointer" onclick="window.open(\'' + gmailSearch + '\', \'_blank\')">';
+          var mailLink = getMailUrl(m.name);
+          html += '<div class="modal-item" style="cursor:pointer" onclick="window.open(\'' + mailLink + '\', \'_blank\')">';
           html += '<span style="color:#e2e8f0">🔗 ' + m.name + '</span>';
           html += '<span style="color:#fbbf24;font-weight:700">¥' + m.amount.toLocaleString() + ' (' + pct + '%)</span></div>';
         });
@@ -1080,8 +1090,8 @@ document.querySelectorAll('.stat-card').forEach(function(card) {
           return { name: r[0], amount: total };
         }).filter(function(m) { return m.amount > 0; }).sort(function(a,b) { return b.amount - a.amount; }) : filtered.topMakers;
         allMakers.forEach(function(m, i) {
-          var gmailSearch = 'https://mail.google.com/mail/u/0/#search/' + encodeURIComponent(m.name);
-          html += '<div class="modal-item" style="cursor:pointer" onclick="window.open(\'' + gmailSearch + '\', \'_blank\')">';
+          var mailLink = getMailUrl(m.name);
+          html += '<div class="modal-item" style="cursor:pointer" onclick="window.open(\'' + mailLink + '\', \'_blank\')">';
           html += '<span style="color:#e2e8f0">🔗 ' + (i+1) + '. ' + m.name + '</span>';
           html += '<span style="color:#4ade80;font-weight:700">¥' + m.amount.toLocaleString() + '</span></div>';
         });
@@ -1319,65 +1329,7 @@ document.getElementById('btnMigrate').addEventListener('click', function() {
   });
 });
 
-// Refresh Token コピー（自動処理用）
-document.getElementById('btnCopyToken').addEventListener('click', function() {
-  // Cookieからセッションを取得
-  var cookies = document.cookie.split(';');
-  var sessionCookie = '';
-  for (var i = 0; i < cookies.length; i++) {
-    var c = cookies[i].trim();
-    if (c.startsWith('inv_session=')) {
-      sessionCookie = c.substring('inv_session='.length);
-      break;
-    }
-  }
 
-  if (!sessionCookie) {
-    // HttpOnly Cookieは直接読めないのでAPIから取得
-    fetch('/api/me?t=' + Date.now()).then(function(r) { return r.json(); }).then(function(d) {
-      if (d.refreshToken) {
-        navigator.clipboard.writeText(d.refreshToken).then(function() {
-          showToast('✅ Refresh Token をコピーしました！');
-        }).catch(function() {
-          prompt('以下のトークンをコピーしてください:', d.refreshToken);
-        });
-      } else {
-        showToast('⚠️ トークンの取得に失敗しました。再ログインしてください');
-      }
-    }).catch(function() {
-      showToast('❌ トークン取得エラー');
-    });
-    return;
-  }
-
-  try {
-    var decoded = JSON.parse(atob(sessionCookie));
-    if (decoded.refresh_token) {
-      navigator.clipboard.writeText(decoded.refresh_token).then(function() {
-        showToast('✅ Refresh Token をコピーしました！');
-      }).catch(function() {
-        prompt('以下のトークンをコピーしてください:', decoded.refresh_token);
-      });
-    } else {
-      showToast('⚠️ Refresh Tokenがありません。再ログインしてください');
-    }
-  } catch (e) {
-    // パースできなかった場合はAPIから取得
-    fetch('/api/me?t=' + Date.now()).then(function(r) { return r.json(); }).then(function(d) {
-      if (d.refreshToken) {
-        navigator.clipboard.writeText(d.refreshToken).then(function() {
-          showToast('✅ Refresh Token をコピーしました！');
-        }).catch(function() {
-          prompt('以下のトークンをコピーしてください:', d.refreshToken);
-        });
-      } else {
-        showToast('⚠️ トークン取得に失敗しました');
-      }
-    }).catch(function() {
-      showToast('❌ トークン取得エラー');
-    });
-  }
-});
 
 loadData();
 

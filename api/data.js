@@ -27,10 +27,12 @@ module.exports = async (req, res) => {
     const invoiceSheetId = (invoiceSearch.files && invoiceSearch.files.length > 0) ? invoiceSearch.files[0].id : null;
     const receiptSheetId = (receiptSearch.files && receiptSearch.files.length > 0) ? receiptSearch.files[0].id : null;
 
-    // データ取得（存在するもののみ）
-    const [invoiceData, receiptData] = await Promise.all([
+    // データ取得（メインシート + 明細シート）
+    const [invoiceData, receiptData, invoiceDetails, receiptDetails] = await Promise.all([
       invoiceSheetId ? googleApi(token, `https://sheets.googleapis.com/v4/spreadsheets/${invoiceSheetId}/values/A:ZZ`) : { values: [] },
-      receiptSheetId ? googleApi(token, `https://sheets.googleapis.com/v4/spreadsheets/${receiptSheetId}/values/A:ZZ`) : { values: [] }
+      receiptSheetId ? googleApi(token, `https://sheets.googleapis.com/v4/spreadsheets/${receiptSheetId}/values/A:ZZ`) : { values: [] },
+      invoiceSheetId ? googleApi(token, `https://sheets.googleapis.com/v4/spreadsheets/${invoiceSheetId}/values/${encodeURIComponent('明細')}!A:F`).catch(() => ({ values: [] })) : { values: [] },
+      receiptSheetId ? googleApi(token, `https://sheets.googleapis.com/v4/spreadsheets/${receiptSheetId}/values/${encodeURIComponent('明細')}!A:F`).catch(() => ({ values: [] })) : { values: [] }
     ]);
 
     // 統計計算関数
@@ -88,8 +90,8 @@ module.exports = async (req, res) => {
     const driveFolderId = (driveFolderSearch.files && driveFolderSearch.files.length > 0) ? driveFolderSearch.files[0].id : null;
 
     res.json({
-      invoice: { ...invoice, sheetUrl: invoiceSheetId ? `https://docs.google.com/spreadsheets/d/${invoiceSheetId}` : '' },
-      receipt: { ...receipt, sheetUrl: receiptSheetId ? `https://docs.google.com/spreadsheets/d/${receiptSheetId}` : '' },
+      invoice: { ...invoice, sheetUrl: invoiceSheetId ? `https://docs.google.com/spreadsheets/d/${invoiceSheetId}` : '', details: (invoiceDetails.values || []) },
+      receipt: { ...receipt, sheetUrl: receiptSheetId ? `https://docs.google.com/spreadsheets/d/${receiptSheetId}` : '', details: (receiptDetails.values || []) },
       driveUrl: driveFolderId ? `https://drive.google.com/drive/folders/${driveFolderId}` : '',
       user: { email: session.email, name: session.name, picture: session.picture }
     });
