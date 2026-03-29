@@ -565,6 +565,14 @@ td { padding: 7px 5px; border-bottom: 1px solid #1e293b; white-space: nowrap }
       </div>
       <div id="debugArea" style="margin-top:8px;max-height:300px;overflow:auto;border-radius:8px"></div>
     </div>
+    <div class="section">
+      <h2>🔄 テスト用リセット</h2>
+      <div style="font-size:11px;color:#94a3b8;margin-bottom:8px;line-height:1.5">
+        Gmailの「仕分け済」ラベルを削除して、再スキャンできるようにします。
+      </div>
+      <button class="btn btn-outline" id="btnResetLabels" style="background:rgba(239,68,68,0.1);border-color:#ef4444;color:#ef4444">🗑️ ラベルをリセット</button>
+      <div id="resetResult" style="margin-top:6px;font-size:11px"></div>
+    </div>
 
     <div class="section">
       <h2>🔍 重複検出・統合</h2>
@@ -1327,6 +1335,34 @@ document.getElementById('btnDrive').addEventListener('click', function() {
 
 // フォルダ整理（旧形式→新形式に移行）
 
+// テスト用ラベルリセット
+document.getElementById('btnResetLabels').addEventListener('click', function() {
+  if (!confirm('⚠️ Gmailの「仕分け済」ラベルを全て削除します。\n再スキャン時に全メールが再処理されます。\n\n実行しますか？')) return;
+  var btn = this;
+  btn.disabled = true;
+  btn.textContent = '🗑️ リセット中...';
+  var resultDiv = document.getElementById('resetResult');
+  resultDiv.innerHTML = '<div style="color:#94a3b8">⏳ ラベルをリセット中...</div>';
+
+  fetch('/api/reset-labels', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({})
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    if (d.error) {
+      resultDiv.innerHTML = '<div style="color:#ef4444">❌ ' + d.error + '</div>';
+    } else {
+      resultDiv.innerHTML = '<div style="color:#22c55e;font-weight:700">✅ ' + (d.message || 'リセット完了') + '</div>';
+      showToast('✅ ラベルリセット完了！');
+    }
+    btn.disabled = false;
+    btn.textContent = '🗑️ ラベルをリセット';
+  }).catch(function(e) {
+    resultDiv.innerHTML = '<div style="color:#ef4444">❌ ' + e.message + '</div>';
+    btn.disabled = false;
+    btn.textContent = '🗑️ ラベルをリセット';
+  });
+});
 
 loadData();
 

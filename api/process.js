@@ -37,7 +37,7 @@ module.exports = async (req, res) => {
     }
     const query = `-label:${processedLabel} after:${afterStr} (has:attachment OR subject:領収 OR subject:注文 OR subject:購入 OR subject:請求 OR subject:キャンセル OR subject:返品 OR subject:返金 OR subject:取消 OR subject:receipt OR subject:order OR subject:invoice OR subject:cancel)`;
     const gmailRes = await googleApi(token,
-      `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=8`
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=5`
     );
     const totalRemaining = gmailRes.resultSizeEstimate || 0;
 
@@ -56,19 +56,24 @@ module.exports = async (req, res) => {
     // レート制限対策
     const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-    // 429リトライ付きGemini呼び出し
-    async function callGeminiWithRetry(fn, maxRetries = 1) {
+    // 429リトライ付きGemini呼び出し（リトライ3回、待機時間10/20/30秒）
+    async function callGeminiWithRetry(fn, maxRetries = 3) {
       for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        geminiCallCount++;
         const result = await fn();
         if (result && result._error && result._error.includes('429')) {
-          console.log(`429エラー、${5 * (attempt + 1)}秒待機してリトライ`);
-          await sleep(5000 * (attempt + 1));
+          const waitSec = 10 * (attempt + 1);
+          console.log(`429エラー、${waitSec}秒待機してリトライ (${attempt + 1}/${maxRetries})`);
+          await sleep(waitSec * 1000);
           continue;
         }
         return result;
       }
       return { _error: 'レート制限超過（リトライ失敗）' };
     }
+
+    // Gemini API呼び出しカウンター（レート制限防止）
+    let geminiCallCount = 0;
 
     // タイムアウトガード（50秒で強制中断）
     const startTime = Date.now();
@@ -79,6 +84,10 @@ module.exports = async (req, res) => {
       if (Date.now() - startTime > TIMEOUT_MS) {
         debugLogs.push({ subject: '⏱️ タイムアウト', status: '⚠️ 残りは次のバッチで処理します', type: '' });
         break;
+      }
+      // レート制限防止: Gemini API呼び出しが2回以上なら5秒待機
+      if (geminiCallCount > 0) {
+        await sleep(5000);
       }
       try {
         const msg = await googleApi(token,
