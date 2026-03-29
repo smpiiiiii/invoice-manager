@@ -448,11 +448,11 @@ td { padding: 7px 5px; border-bottom: 1px solid #1e293b; white-space: nowrap }
   <div class="date-range-card" id="dateRangeCard">
     <div class="date-range-header">
       <h3>📅 表示期間</h3>
-      <span class="date-range-label" id="dateRangeLabel">全期間</span>
+      <span class="date-range-label" id="dateRangeLabel">今月</span>
     </div>
     <div class="preset-btns" id="presetBtns">
-      <button class="preset-btn active" data-preset="all">全期間</button>
-      <button class="preset-btn" data-preset="thisMonth">今月</button>
+      <button class="preset-btn" data-preset="all">全期間</button>
+      <button class="preset-btn active" data-preset="thisMonth">今月</button>
       <button class="preset-btn" data-preset="3months">3ヶ月</button>
       <button class="preset-btn" data-preset="6months">半年</button>
       <button class="preset-btn" data-preset="1year">1年</button>
@@ -619,11 +619,12 @@ function showToast(msg) {
 var allData = null;
 var currentMode = 'invoice';
 
-// 期間フィルター設定
+// 期間フィルター設定（デフォルト: 今月）
+var now = new Date();
 var dateFilter = {
-  preset: 'all',  // 'all', 'thisMonth', '3months', '6months', '1year', 'custom'
-  from: null,     // Date オブジェクト
-  to: null        // Date オブジェクト
+  preset: 'thisMonth',
+  from: new Date(now.getFullYear(), now.getMonth(), 1),
+  to: new Date(now.getFullYear(), now.getMonth(), now.getDate())
 };
 
 // モード切替（グローバル）
