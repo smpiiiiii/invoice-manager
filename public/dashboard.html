@@ -558,10 +558,7 @@ td { padding: 7px 5px; border-bottom: 1px solid #1e293b; white-space: nowrap }
   <div id="tab-actions" class="hidden">
     <div class="section">
       <h2>⚡ 手動操作</h2>
-      <div style="display:flex;gap:6px;margin-bottom:6px">
-        <button class="btn btn-primary" id="btnProcess" style="flex:1;margin-bottom:0">▶️ 5件処理</button>
-        <button class="btn btn-success" id="btnProcessAll" style="flex:1;margin-bottom:0">🔄 全件連続処理</button>
-      </div>
+      <button class="btn btn-success" id="btnProcessAll" style="width:100%;margin-bottom:6px">🔄 全件連続処理</button>
       <button class="btn btn-outline hidden" id="btnStopProcess" style="background:rgba(239,68,68,0.1);border-color:#ef4444;color:#ef4444">⏹️ 処理を停止</button>
       <div style="font-size:10px;color:#64748b;margin:2px 0 6px;text-align:center" id="modeHint">📄📧 メールを自動仕分け（請求書・領収書を自動判定）</div>
       <div id="progressArea" class="hidden" style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:8px 12px;margin-bottom:6px">
@@ -1195,7 +1192,6 @@ function stopFakeProgress() {
 }
 
 function setProcessButtonsState(processing) {
-  document.getElementById('btnProcess').disabled = processing;
   document.getElementById('btnProcessAll').disabled = processing;
   var stopBtn = document.getElementById('btnStopProcess');
   if (processing && isAutoProcessing) {
@@ -1289,24 +1285,6 @@ function runOneBatch(callback) {
     callback(e);
   });
 }
-
-// 単発処理ボタン（20件）
-document.getElementById('btnProcess').addEventListener('click', function() {
-  showToast('⏳ メール仕分け処理中...');
-  setProcessButtonsState(true);
-  totalProcessedCount = 0;
-
-  runOneBatch(function(err, result) {
-    setProcessButtonsState(false);
-    document.getElementById('progressArea').classList.add('hidden');
-    if (err) {
-      showToast('❌ エラー: ' + err.message);
-    } else {
-      showToast('✅ ' + result.processed + '件処理完了（残り約' + Math.max(result.remaining - result.found, 0) + '件）');
-      loadData();
-    }
-  });
-});
 
 // 全件連続処理ボタン
 document.getElementById('btnProcessAll').addEventListener('click', function() {
