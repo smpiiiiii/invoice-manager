@@ -1141,7 +1141,7 @@ function renderAllBatches(debugDiv) {
       if (l.status && (l.status.includes('📄') || l.status.includes('🧾'))) statusColor = '#4ade80';
       if (l.status && l.status.includes('⚠️')) statusColor = '#f59e0b';
       if (l.status && l.status.includes('❌')) statusColor = '#f87171';
-      var mailUrl = l.msgId ? 'https://mail.google.com/mail/u/0/#all/' + l.msgId : '';
+      var mailUrl = l.subject ? 'https://mail.google.com/mail/u/0/#search/' + encodeURIComponent('subject:"' + l.subject + '"') : '';
       html += '<div class="log-item" style="border-left:3px solid ' + statusColor + ';padding-left:8px;margin-bottom:4px;cursor:' + (mailUrl ? 'pointer' : 'default') + '" ' + (mailUrl ? 'onclick="window.open(\'' + mailUrl + '\', \'_blank\')"' : '') + '>';
       html += '<div style="display:flex;justify-content:space-between;align-items:center">';
       html += '<div style="color:#e2e8f0;font-weight:600;font-size:11px;flex:1">' + (mailUrl ? '🔗 ' : '') + (l.subject || '不明') + '</div>';
