@@ -46,8 +46,8 @@ module.exports = async (req, res) => {
       return res.json({ success: true, message: '新しいメールはありません', processed: 0, errors: 0, debug: { query, found: 0, totalRemaining: 0 } });
     }
 
-    // 1バッチで処理する最大件数（Vercel 60秒制限内で確実に完了するサイズ）
-    const BATCH_LIMIT = 5;
+    // 1バッチで処理する最大件数（Gemini APIレート制限 + Vercel 60秒制限に対応）
+    const BATCH_LIMIT = 3;
     const messageIds = allMessageIds.slice(0, BATCH_LIMIT);
 
     // 仕分け済ラベルを取得or作成
@@ -60,13 +60,14 @@ module.exports = async (req, res) => {
     // レート制限対策
     const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-    // 429リトライ付きGemini呼び出し（リトライ2回、待機時間3/6秒）
+    // 429リトライ付きGemini呼び出し（リトライ2回、待機時間10/20秒）
     async function callGeminiWithRetry(fn, maxRetries = 2) {
       for (let attempt = 0; attempt <= maxRetries; attempt++) {
         geminiCallCount++;
         const result = await fn();
         if (result && result._error && result._error.includes('429')) {
-          const waitSec = 3 * (attempt + 1);
+          if (attempt >= maxRetries) break;
+          const waitSec = 10 * (attempt + 1);
           console.log(`429エラー、${waitSec}秒待機してリトライ (${attempt + 1}/${maxRetries})`);
           await sleep(waitSec * 1000);
           continue;
@@ -89,9 +90,9 @@ module.exports = async (req, res) => {
         debugLogs.push({ subject: '⏱️ タイムアウト', status: '⚠️ 残りは次のバッチで処理します', type: '' });
         break;
       }
-      // レート制限防止: Gemini API呼び出しが2回以上なら1秒待機（課金プラン）
+      // レート制限防止: Gemini API呼び出し後5秒待機（無料プラン 15RPM対応）
       if (geminiCallCount > 0) {
-        await sleep(1000);
+        await sleep(5000);
       }
       try {
         const msg = await googleApi(token,
