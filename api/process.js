@@ -148,10 +148,8 @@ module.exports = async (req, res) => {
             );
 
             await updateSheet(token, targetSheet, analysis.makerName, analysis.amount, yearMonth);
-            // 商品明細を記録
-            if (analysis.items && analysis.items.length > 0) {
-              await appendItemsToSheet(token, targetSheet, analysis.makerName, analysis.items, yearMonth, dateStr, mailUrl);
-            }
+            // 商品明細を記録（商品名がなくてもメールリンク保存のため必ず書き込む）
+            await appendItemsToSheet(token, targetSheet, analysis.makerName, analysis.items || [], yearMonth, dateStr, mailUrl);
             results.push({ maker: analysis.makerName, amount: analysis.amount, month: yearMonth, type: docType, items: analysis.items || [] });
             var itemsLabel = (analysis.items && analysis.items.length > 0) ? ' [' + analysis.items.slice(0,2).join(', ') + (analysis.items.length > 2 ? '...' : '') + ']' : '';
             logEntry.status = `${docType === '請求書' ? '📄' : '🧾'} ${docType} → ${analysis.makerName} ¥${analysis.amount.toLocaleString()}${itemsLabel}`;
@@ -191,9 +189,8 @@ module.exports = async (req, res) => {
               const targetSheet = analysis.type === 'invoice' ? invoiceRes.sheetId : receiptRes.sheetId;
 
               await updateSheet(token, targetSheet, analysis.makerName, analysis.amount, yearMonth);
-              if (analysis.items && analysis.items.length > 0) {
-                await appendItemsToSheet(token, targetSheet, analysis.makerName, analysis.items, yearMonth, dateStr, mailUrl);
-              }
+              // 商品明細を記録（商品名がなくてもメールリンク保存のため必ず書き込む）
+              await appendItemsToSheet(token, targetSheet, analysis.makerName, analysis.items || [], yearMonth, dateStr, mailUrl);
               results.push({ maker: analysis.makerName, amount: analysis.amount, month: yearMonth, type: docType, source: 'メール本文', items: analysis.items || [] });
               var itemsLabel2 = (analysis.items && analysis.items.length > 0) ? ' [' + analysis.items.slice(0,2).join(', ') + (analysis.items.length > 2 ? '...' : '') + ']' : '';
               logEntry.status = `${docType === '請求書' ? '📄' : '🧾'} ${docType} → ${analysis.makerName} ¥${analysis.amount.toLocaleString()}${itemsLabel2}`;
@@ -562,7 +559,10 @@ async function appendItemsToSheet(token, sheetId, makerName, items, yearMonth, d
     }
 
     // 商品名を行として追加（メールリンク付き）
-    const rows = items.map(item => [dateStr, makerName, item, '', yearMonth, mailUrl || '']);
+    // itemsが空でもメールリンク保存のため1行は必ず書き込む
+    const rows = items.length > 0
+      ? items.map(item => [dateStr, makerName, item, '', yearMonth, mailUrl || ''])
+      : [[dateStr, makerName, '-', '', yearMonth, mailUrl || '']];
     await googleApi(token,
       `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(detailSheet)}!A:F:append?valueInputOption=USER_ENTERED`,
       { method: 'POST', body: JSON.stringify({ values: rows }) }
