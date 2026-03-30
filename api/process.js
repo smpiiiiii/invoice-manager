@@ -41,10 +41,14 @@ module.exports = async (req, res) => {
     );
     const totalRemaining = gmailRes.resultSizeEstimate || 0;
 
-    const messageIds = (gmailRes.messages || []).map(m => m.id);
-    if (messageIds.length === 0) {
+    const allMessageIds = (gmailRes.messages || []).map(m => m.id);
+    if (allMessageIds.length === 0) {
       return res.json({ success: true, message: '新しいメールはありません', processed: 0, errors: 0, debug: { query, found: 0, totalRemaining: 0 } });
     }
+
+    // 1バッチで処理する最大件数（Vercel 60秒制限に収まるよう制限）
+    const BATCH_LIMIT = 8;
+    const messageIds = allMessageIds.slice(0, BATCH_LIMIT);
 
     // 仕分け済ラベルを取得or作成
     const labelId = await getOrCreateLabel(token, processedLabel);
@@ -75,9 +79,9 @@ module.exports = async (req, res) => {
     // Gemini API呼び出しカウンター（レート制限防止）
     let geminiCallCount = 0;
 
-    // タイムアウトガード（50秒で強制中断）
+    // タイムアウトガード（40秒で強制中断 — Vercel 60秒制限に余裕を持たせる）
     const startTime = Date.now();
-    const TIMEOUT_MS = 50000;
+    const TIMEOUT_MS = 40000;
 
     for (const msgId of messageIds) {
       // タイムアウトチェック
