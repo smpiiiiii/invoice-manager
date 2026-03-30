@@ -1070,16 +1070,47 @@ document.querySelectorAll('.stat-card').forEach(function(card) {
 
     if (stat === 'processed') {
       html = '<h3>' + modeIcon + ' 処理済み詳細</h3>';
-      if (filtered.tableData && filtered.tableData.length > 1) {
+      // 明細データがあれば個別日付付きで表示
+      if (d.details && d.details.length > 1) {
+        var detailItems = [];
+        for (var di = 1; di < d.details.length; di++) {
+          var dr = d.details[di];
+          var dDate = (dr[0] || '').trim();
+          var dName = (dr[1] || '').trim();
+          var dItem = (dr[2] || '').trim();
+          var dAmount = (dr[3] || '').trim();
+          var dMailUrl = (dr[5] || '').trim();
+          if (!dName) continue;
+          // 日付フィルター適用
+          if (dDate && dateFilter.from) {
+            var parts = dDate.split('/');
+            if (parts.length === 3) {
+              var itemDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+              if (itemDate < dateFilter.from || itemDate > dateFilter.to) continue;
+            }
+          }
+          detailItems.push({ date: dDate, name: dName, item: dItem, amount: dAmount, mailUrl: dMailUrl });
+        }
+        if (detailItems.length > 0) {
+          detailItems.forEach(function(item) {
+            var copySubject = item.name.replace(/'/g, "\\'");
+            html += '<div class="modal-item" style="cursor:pointer" onclick="navigator.clipboard.writeText(\'' + copySubject + ' ' + item.date + '\').then(function(){showToast(\'📋 コピーしました\')});">';
+            html += '<div style="display:flex;justify-content:space-between">';
+            html += '<span style="color:#e2e8f0">📋 ' + item.name + ' <span style="color:#64748b;font-size:10px">(' + item.date + ')</span></span>';
+            html += '<span style="color:#4ade80;font-weight:700">' + (item.item !== '-' ? item.item : '') + '</span>';
+            html += '</div></div>';
+          });
+        } else { html += '<div style="color:#64748b">この期間のデータはありません</div>'; }
+      } else if (filtered.tableData && filtered.tableData.length > 1) {
+        // 明細なしの場合はサマリーテーブルから表示（フォールバック）
         var months = filtered.tableData[0].slice(1);
         for (var r = 1; r < filtered.tableData.length; r++) {
           var name = filtered.tableData[r][0] || '';
           for (var c = 1; c < filtered.tableData[r].length; c++) {
             var val = parseInt(filtered.tableData[r][c]) || 0;
             if (val > 0) {
-              var mailLink = getMailUrl(name);
-              html += '<div class="modal-item" style="cursor:pointer" onclick="window.open(\'' + mailLink + '\', \'_blank\')">';
-              html += '<span style="color:#e2e8f0">🔗 ' + name + ' (' + (months[c-1]||'') + ')</span>';
+              html += '<div class="modal-item">';
+              html += '<span style="color:#e2e8f0">' + name + ' (' + (months[c-1]||'') + ')</span>';
               html += '<span style="color:#4ade80;font-weight:700">¥' + val.toLocaleString() + '</span></div>';
             }
           }
