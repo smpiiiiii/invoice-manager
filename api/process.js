@@ -46,8 +46,8 @@ module.exports = async (req, res) => {
       return res.json({ success: true, message: '新しいメールはありません', processed: 0, errors: 0, debug: { query, found: 0, totalRemaining: 0 } });
     }
 
-    // 1バッチで処理する最大件数（Gemini APIレート制限 + Vercel 60秒制限に対応）
-    const BATCH_LIMIT = 3;
+    // 1バッチで処理する最大件数（有料プラン 2000RPM + Vercel 60秒制限）
+    const BATCH_LIMIT = 5;
     const messageIds = allMessageIds.slice(0, BATCH_LIMIT);
 
     // 仕分け済ラベルを取得or作成
@@ -90,9 +90,9 @@ module.exports = async (req, res) => {
         debugLogs.push({ subject: '⏱️ タイムアウト', status: '⚠️ 残りは次のバッチで処理します', type: '' });
         break;
       }
-      // レート制限防止: Gemini API呼び出し後5秒待機（無料プラン 15RPM対応）
+      // レート制限防止: Gemini API呼び出し後1秒待機（有料プラン 2000RPM）
       if (geminiCallCount > 0) {
-        await sleep(5000);
+        await sleep(1000);
       }
       try {
         const msg = await googleApi(token,
