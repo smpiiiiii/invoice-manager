@@ -1055,11 +1055,11 @@ document.querySelectorAll('.stat-card').forEach(function(card) {
         }
       }
     }
-    // メールリンク取得関数（明細にあればピンポイント、なければGmail検索）
+    // メールリンク取得関数（明細にあれば個別メール、なければGmail検索）
     function getMailUrl(name) {
       if (mailLinks[name]) return mailLinks[name];
-      // 取引先名でGmailを検索（from:やsubject:で絞り込み）
-      return 'https://mail.google.com/mail/u/0/#search/' + encodeURIComponent('from:' + name + ' OR subject:' + name);
+      // 取引先名でGmailを検索
+      return 'https://mail.google.com/mail/u/0/#search/' + encodeURIComponent('"' + name + '"');
     }
 
     var modal = document.getElementById('statModal');
