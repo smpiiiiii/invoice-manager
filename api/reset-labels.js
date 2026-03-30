@@ -57,43 +57,43 @@ module.exports = async (req, res) => {
       results.labels = 'ラベルなし';
     }
 
-    // === 2. スプレッドシートのデータクリア ===
-    // 「📋 請求書管理」スプレッドシートを検索
-    const sheetSearch = await googleApi(token,
-      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent("name='📋 請求書管理' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false")}&fields=files(id)`
-    );
-    if (sheetSearch.files && sheetSearch.files.length > 0) {
-      const sheetId = sheetSearch.files[0].id;
-      // スプレッドシートのシート情報を取得
-      const sheetInfo = await googleApi(token,
-        `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}?fields=sheets.properties`
+    // === 2. スプレッドシートのデータクリア（請求書・領収書の両方） ===
+    const sheetNames = ['📋 請求書管理', '📋 領収書管理'];
+    let totalSheetsCleaned = 0;
+
+    for (const sheetName of sheetNames) {
+      const sheetSearch = await googleApi(token,
+        `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`name='${sheetName}' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`)}&fields=files(id)`
       );
-      const sheets = sheetInfo.sheets || [];
-      for (const s of sheets) {
-        const sheetTitle = s.properties.title;
-        // ヘッダー行だけ残してデータをクリア
-        try {
-          await googleApi(token,
-            `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(sheetTitle)}!A2:Z?valueInputOption=USER_ENTERED`,
-            { method: 'PUT', body: JSON.stringify({ values: [] }) }
-          );
-        } catch (e) {
-          // シートが空の場合はエラーを無視
-          console.log(`シート「${sheetTitle}」クリアスキップ:`, e.message);
-        }
-      }
-      // batchClearで全シートのデータをクリア（ヘッダー以外）
-      const ranges = sheets.map(s => `${s.properties.title}!A2:Z10000`);
-      if (ranges.length > 0) {
-        await googleApi(token,
-          `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values:batchClear`,
-          { method: 'POST', body: JSON.stringify({ ranges }) }
+      if (sheetSearch.files && sheetSearch.files.length > 0) {
+        const sheetId = sheetSearch.files[0].id;
+        const sheetInfo = await googleApi(token,
+          `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}?fields=sheets.properties`
         );
+        const sheets = sheetInfo.sheets || [];
+        for (const s of sheets) {
+          const sheetTitle = s.properties.title;
+          try {
+            await googleApi(token,
+              `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(sheetTitle)}!A2:Z?valueInputOption=USER_ENTERED`,
+              { method: 'PUT', body: JSON.stringify({ values: [] }) }
+            );
+          } catch (e) {
+            console.log(`シート「${sheetTitle}」クリアスキップ:`, e.message);
+          }
+        }
+        // batchClearで全シートのデータをクリア（ヘッダー以外）
+        const ranges = sheets.map(s => `${s.properties.title}!A2:Z10000`);
+        if (ranges.length > 0) {
+          await googleApi(token,
+            `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values:batchClear`,
+            { method: 'POST', body: JSON.stringify({ ranges }) }
+          );
+        }
+        totalSheetsCleaned += sheets.length;
       }
-      results.sheet = `${sheets.length}シートのデータクリア`;
-    } else {
-      results.sheet = 'スプレッドシートなし';
     }
+    results.sheet = totalSheetsCleaned > 0 ? `${totalSheetsCleaned}シートのデータクリア（請求書+領収書）` : 'スプレッドシートなし';
 
     // === 3. Driveフォルダの中身を削除 ===
     const folderName = '📂 請求書・領収書管理';
