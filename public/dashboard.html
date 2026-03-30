@@ -1414,6 +1414,12 @@ document.getElementById('btnDrive').addEventListener('click', function() {
 
 // テスト用ラベルリセット
 document.getElementById('btnResetLabels').addEventListener('click', function() {
+  var pw = prompt('🔒 フルリセットにはパスワードが必要です：');
+  if (!pw) return;
+  if (pw !== '0205') {
+    showToast('❌ パスワードが違います');
+    return;
+  }
   if (!confirm('⚠️ フルリセットを実行します：\n\n① Gmailの「仕分け済」ラベルを全削除\n② スプレッドシートのデータをクリア\n③ Driveフォルダ内のファイルを全削除\n\n本当に実行しますか？')) return;
   var btn = this;
   btn.disabled = true;
