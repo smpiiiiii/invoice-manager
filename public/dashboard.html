@@ -462,10 +462,11 @@ td { padding: 7px 5px; border-bottom: 1px solid #1e293b; white-space: nowrap }
   <div class="date-range-card" id="dateRangeCard">
     <div class="date-range-header">
       <h3>📅 表示期間</h3>
-      <span class="date-range-label" id="dateRangeLabel">今月</span>
+      <span class="date-range-label" id="dateRangeLabel">今日</span>
     </div>
     <div class="preset-btns" id="presetBtns">
-      <button class="preset-btn active" data-preset="thisMonth">今月</button>
+      <button class="preset-btn active" data-preset="today">今日</button>
+      <button class="preset-btn" data-preset="thisMonth">今月</button>
       <script>
         // 現在年から3年分のボタンを動的生成
         (function() {
@@ -558,7 +559,7 @@ td { padding: 7px 5px; border-bottom: 1px solid #1e293b; white-space: nowrap }
   <div id="tab-actions" class="hidden">
     <div class="section">
       <h2>⚡ 手動操作</h2>
-      <button class="btn btn-success" id="btnProcessAll" style="width:100%;margin-bottom:6px">🔄 全件連続処理</button>
+      <button class="btn btn-success" id="btnProcessAll" style="width:100%;margin-bottom:6px">🔄 処理</button>
       <button class="btn btn-outline hidden" id="btnStopProcess" style="background:rgba(239,68,68,0.1);border-color:#ef4444;color:#ef4444">⏹️ 処理を停止</button>
       <div style="font-size:10px;color:#64748b;margin:2px 0 6px;text-align:center" id="modeHint">📄📧 メールを自動仕分け（請求書・領収書を自動判定）</div>
       <div id="progressArea" class="hidden" style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:8px 12px;margin-bottom:6px">
@@ -624,11 +625,11 @@ function showToast(msg) {
 var allData = null;
 var currentMode = 'invoice';
 
-// 期間フィルター設定（デフォルト: 今月）
+// 期間フィルター設定（デフォルト: 今日）
 var now = new Date();
 var dateFilter = {
-  preset: 'thisMonth',
-  from: new Date(now.getFullYear(), now.getMonth(), 1),
+  preset: 'today',
+  from: new Date(now.getFullYear(), now.getMonth(), now.getDate()),
   to: new Date(now.getFullYear(), now.getMonth(), now.getDate())
 };
 
@@ -690,7 +691,10 @@ document.querySelectorAll('.preset-btn').forEach(function(btn) {
     var now = new Date();
     var today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
-    if (preset === 'thisMonth') {
+    if (preset === 'today') {
+      dateFilter.from = today;
+      dateFilter.to = today;
+    } else if (preset === 'thisMonth') {
       dateFilter.from = new Date(now.getFullYear(), now.getMonth(), 1);
       dateFilter.to = today;
     } else if (preset.startsWith('year-')) {
@@ -1054,7 +1058,8 @@ document.querySelectorAll('.stat-card').forEach(function(card) {
     // メールリンク取得関数（明細にあればピンポイント、なければGmail検索）
     function getMailUrl(name) {
       if (mailLinks[name]) return mailLinks[name];
-      return 'https://mail.google.com/mail/u/0/#search/' + encodeURIComponent(name);
+      // 取引先名でGmailを検索（from:やsubject:で絞り込み）
+      return 'https://mail.google.com/mail/u/0/#search/' + encodeURIComponent('from:' + name + ' OR subject:' + name);
     }
 
     var modal = document.getElementById('statModal');
