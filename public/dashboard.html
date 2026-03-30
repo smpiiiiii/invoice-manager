@@ -1141,10 +1141,10 @@ function renderAllBatches(debugDiv) {
       if (l.status && (l.status.includes('📄') || l.status.includes('🧾'))) statusColor = '#4ade80';
       if (l.status && l.status.includes('⚠️')) statusColor = '#f59e0b';
       if (l.status && l.status.includes('❌')) statusColor = '#f87171';
-      var mailUrl = l.subject ? 'https://mail.google.com/mail/u/0/#search/' + encodeURIComponent('subject:"' + l.subject + '"') : '';
-      html += '<div class="log-item" style="border-left:3px solid ' + statusColor + ';padding-left:8px;margin-bottom:4px;cursor:' + (mailUrl ? 'pointer' : 'default') + '" ' + (mailUrl ? 'onclick="window.open(\'' + mailUrl + '\', \'_blank\')"' : '') + '>';
+      var searchSubject = (l.subject || '').replace(/'/g, "\\'");
+      html += '<div class="log-item" style="border-left:3px solid ' + statusColor + ';padding-left:8px;margin-bottom:4px;cursor:pointer" onclick="navigator.clipboard.writeText(\'' + searchSubject + '\').then(function(){showToast(\'📋 件名をコピーしました — Gmailで検索してください\')}).catch(function(){showToast(\'📋 ' + searchSubject.substring(0,20) + '\')});">';
       html += '<div style="display:flex;justify-content:space-between;align-items:center">';
-      html += '<div style="color:#e2e8f0;font-weight:600;font-size:11px;flex:1">' + (mailUrl ? '🔗 ' : '') + (l.subject || '不明') + '</div>';
+      html += '<div style="color:#e2e8f0;font-weight:600;font-size:11px;flex:1">📋 ' + (l.subject || '不明') + '</div>';
       if (l.date) html += '<div style="color:#64748b;font-size:10px;white-space:nowrap;margin-left:8px">📅 ' + l.date + '</div>';
       html += '</div>';
       html += '<div style="color:' + statusColor + ';font-size:12px;font-weight:700">' + (l.status || '-') + '</div>';
@@ -1293,11 +1293,10 @@ function runOneBatch(callback) {
 
 // 全件連続処理ボタン
 document.getElementById('btnProcessAll').addEventListener('click', function() {
-  if (!confirm('未処理のメールをすべて連続処理しますか？\n（途中で停止ボタンを押して止められます）')) return;
   isAutoProcessing = true;
   totalProcessedCount = 0;
   setProcessButtonsState(true);
-  showToast('🔄 全件連続処理を開始します...');
+  showToast('🔄 処理を開始します...');
 
   function processNextBatch() {
     if (!isAutoProcessing) {
@@ -1347,6 +1346,9 @@ document.getElementById('btnProcessAll').addEventListener('click', function() {
         loadData();
         return;
       }
+
+      // バッチ完了ごとにダッシュボードを更新（カウントがリアルタイムで増える）
+      loadData();
 
       // 次のバッチへ（2秒待機してAPI負荷軽減）
       setTimeout(processNextBatch, 2000);
