@@ -189,6 +189,20 @@ td { padding: 7px 5px; border-bottom: 1px solid #1e293b; white-space: nowrap }
 .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #334155; color: #e2e8f0; padding: 10px 20px; border-radius: 10px; font-size: 12px; font-weight: 700; z-index: 100; display: none }
 .spinner { width: 28px; height: 28px; border: 3px solid #334155; border-top: 3px solid #38bdf8; border-radius: 50%; animation: spin .8s linear infinite; margin: 10px auto }
 @keyframes spin { to { transform: rotate(360deg) } }
+@keyframes progressPulse {
+  0% { opacity: 1 }
+  50% { opacity: .5 }
+  100% { opacity: 1 }
+}
+@keyframes progressStripe {
+  0% { background-position: 0 0 }
+  100% { background-position: 30px 0 }
+}
+.progress-active {
+  background: repeating-linear-gradient(90deg, #38bdf8, #818cf8 15px, #38bdf8 30px) !important;
+  background-size: 30px 100% !important;
+  animation: progressStripe .8s linear infinite !important;
+}
 .stat-card { cursor: pointer; transition: transform .15s, box-shadow .15s }
 .stat-card:active { transform: scale(.95) }
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 200; display: none; align-items: center; justify-content: center; padding: 16px }
@@ -1138,12 +1152,46 @@ function renderAllBatches(debugDiv) {
   debugDiv.innerHTML = html;
 }
 
-function updateProgress(label, count, percent) {
+// 処理中の仮進捗タイマー
+var fakeProgressTimer = null;
+var fakeProgressPercent = 0;
+
+function updateProgress(label, count, percent, indeterminate) {
   var area = document.getElementById('progressArea');
   area.classList.remove('hidden');
   document.getElementById('progressLabel').textContent = label;
   document.getElementById('progressCount').textContent = count + '件処理済み';
-  document.getElementById('progressBar').style.width = Math.min(percent, 100) + '%';
+  var bar = document.getElementById('progressBar');
+  if (indeterminate) {
+    // 処理中アニメーション：ストライプ模様が流れる
+    bar.classList.add('progress-active');
+  } else {
+    bar.classList.remove('progress-active');
+  }
+  bar.style.width = Math.min(percent, 100) + '%';
+}
+
+// バッチ処理中に仮進捗をアニメーションする
+function startFakeProgress(startPercent) {
+  stopFakeProgress();
+  fakeProgressPercent = startPercent || 0;
+  var bar = document.getElementById('progressBar');
+  bar.classList.add('progress-active');
+  // 1秒ごとに少しずつゲージを進める（最大90%まで）
+  fakeProgressTimer = setInterval(function() {
+    fakeProgressPercent += (90 - fakeProgressPercent) * 0.08;
+    if (fakeProgressPercent > 90) fakeProgressPercent = 90;
+    bar.style.width = fakeProgressPercent + '%';
+  }, 1000);
+}
+
+function stopFakeProgress() {
+  if (fakeProgressTimer) {
+    clearInterval(fakeProgressTimer);
+    fakeProgressTimer = null;
+  }
+  var bar = document.getElementById('progressBar');
+  bar.classList.remove('progress-active');
 }
 
 function setProcessButtonsState(processing) {
@@ -1278,12 +1326,17 @@ document.getElementById('btnProcessAll').addEventListener('click', function() {
       return;
     }
 
-    updateProgress('バッチ処理中...', totalProcessedCount, 0);
+    // バッチ開始時：前回の進捗を維持し、仮進捗アニメーション開始
+    var currentPercent = totalProcessedCount > 0 ? fakeProgressPercent : 5;
+    updateProgress('📧 バッチ ' + (allBatchResults.length + 1) + ' 解析中...', totalProcessedCount, currentPercent, true);
+    startFakeProgress(currentPercent);
 
     runOneBatch(function(err, result) {
+      stopFakeProgress();
       if (err) {
         isAutoProcessing = false;
         setProcessButtonsState(false);
+        stopFakeProgress();
         showToast('❌ エラーで停止: ' + err.message);
         document.getElementById('progressArea').classList.add('hidden');
         loadData();
@@ -1292,13 +1345,15 @@ document.getElementById('btnProcessAll').addEventListener('click', function() {
 
       var remaining = Math.max(result.remaining - result.found, 0);
       var percent = remaining > 0 ? (totalProcessedCount / (totalProcessedCount + remaining)) * 100 : 100;
-      updateProgress('残り約' + remaining + '件', totalProcessedCount, percent);
+      fakeProgressPercent = percent;
+      updateProgress('✅ バッチ完了 — 残り約' + remaining + '件', totalProcessedCount, percent, false);
 
       if (result.found === 0 || remaining === 0) {
         // 全件処理完了
         isAutoProcessing = false;
         setProcessButtonsState(false);
-        updateProgress('完了！', totalProcessedCount, 100);
+        stopFakeProgress();
+        updateProgress('🎉 完了！', totalProcessedCount, 100, false);
         showToast('🎉 全件処理完了！ ' + totalProcessedCount + '件処理しました');
         loadData();
         return;

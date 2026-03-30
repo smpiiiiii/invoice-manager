@@ -85,9 +85,9 @@ module.exports = async (req, res) => {
         debugLogs.push({ subject: '⏱️ タイムアウト', status: '⚠️ 残りは次のバッチで処理します', type: '' });
         break;
       }
-      // レート制限防止: Gemini API呼び出しが2回以上なら5秒待機
+      // レート制限防止: Gemini API呼び出しが2回以上なら2秒待機（課金プラン）
       if (geminiCallCount > 0) {
-        await sleep(5000);
+        await sleep(2000);
       }
       try {
         const msg = await googleApi(token,
