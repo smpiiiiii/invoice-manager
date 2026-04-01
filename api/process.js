@@ -591,10 +591,24 @@ async function updateSheet(token, sheetId, makerName, amount, yearMonth) {
     if (values[0][j] === yearMonth) { colIdx = j; break; }
   }
 
-  // なければ追加
+  // なければ日付順の正しい位置に挿入
   if (colIdx === -1) {
-    colIdx = values[0].length;
-    values[0].push(yearMonth);
+    // 挿入位置を探す（年月の昇順を維持）
+    let insertAt = values[0].length; // デフォルトは末尾
+    for (let j = 1; j < values[0].length; j++) {
+      if (values[0][j] > yearMonth) {
+        insertAt = j;
+        break;
+      }
+    }
+    // ヘッダー行に挿入
+    values[0].splice(insertAt, 0, yearMonth);
+    // 全データ行にも空セルを挿入（列ずれ防止）
+    for (let i = 1; i < values.length; i++) {
+      while (values[i].length < insertAt) values[i].push('');
+      values[i].splice(insertAt, 0, '');
+    }
+    colIdx = insertAt;
   }
   if (rowIdx === -1) {
     rowIdx = values.length;
