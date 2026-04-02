@@ -25,7 +25,7 @@ module.exports = async (req, res) => {
     const driveFolderId = await ensureParentFolder(token);
 
     // 2. Gmail統合検索（仕分け済ラベル除外）
-    // 検索期間: リクエストのafterパラメータがあればそれを使用、なければ今月1日から
+    // 検索期間: リクエストのafter/beforeパラメータがあればそれを使用、なければ今月1日から
     const processedLabel = '仕分け済';
     const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
     let afterStr;
@@ -35,7 +35,10 @@ module.exports = async (req, res) => {
       const now = new Date();
       afterStr = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/01`;
     }
-    const query = `-label:${processedLabel} after:${afterStr} (has:attachment OR subject:領収 OR subject:注文 OR subject:購入 OR subject:請求 OR subject:キャンセル OR subject:返品 OR subject:返金 OR subject:取消 OR subject:receipt OR subject:order OR subject:invoice OR subject:cancel)`;
+    // 終了日が指定されていれば期間を絞る
+    const beforeStr = body.before || '';
+    const beforeQuery = beforeStr ? ` before:${beforeStr}` : '';
+    const query = `-label:${processedLabel} after:${afterStr}${beforeQuery} (has:attachment OR subject:領収 OR subject:注文 OR subject:購入 OR subject:請求 OR subject:キャンセル OR subject:返品 OR subject:返金 OR subject:取消 OR subject:receipt OR subject:order OR subject:invoice OR subject:cancel)`;
     const gmailRes = await googleApi(token,
       `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=20`
     );

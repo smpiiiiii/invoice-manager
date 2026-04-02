@@ -1269,9 +1269,15 @@ function runOneBatch(callback) {
 
   // スキャン期間をダッシュボードの期間フィルターに連動
   var afterDate = '';
+  var beforeDate = '';
   if (dateFilter.from) {
     var af = dateFilter.from;
     afterDate = af.getFullYear() + '/' + String(af.getMonth() + 1).padStart(2, '0') + '/' + String(af.getDate()).padStart(2, '0');
+  }
+  if (dateFilter.to) {
+    // before は「その日を含まない」なので+1日する
+    var bf = new Date(dateFilter.to.getTime() + 86400000);
+    beforeDate = bf.getFullYear() + '/' + String(bf.getMonth() + 1).padStart(2, '0') + '/' + String(bf.getDate()).padStart(2, '0');
   }
 
   // フロント側タイムアウト（90秒 — サーバーは40秒で切れるので余裕あり）
@@ -1281,7 +1287,7 @@ function runOneBatch(callback) {
   fetch('/api/process', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ after: afterDate }),
+    body: JSON.stringify({ after: afterDate, before: beforeDate }),
     signal: controller.signal
   }).then(function(r) { clearTimeout(fetchTimeout); return r.json(); }).then(function(d) {
     var found = (d.debug && d.debug.found) || 0;
