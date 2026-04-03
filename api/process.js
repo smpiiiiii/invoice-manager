@@ -50,7 +50,7 @@ module.exports = async (req, res) => {
     }
 
     // 1バッチで処理する最大件数（有料プラン 2000RPM + Vercel 60秒制限）
-    const BATCH_LIMIT = 5;
+    const BATCH_LIMIT = 10;
     const messageIds = allMessageIds.slice(0, BATCH_LIMIT);
 
     // 仕分け済ラベルを取得or作成
@@ -83,9 +83,9 @@ module.exports = async (req, res) => {
     // Gemini API呼び出しカウンター（レート制限防止）
     let geminiCallCount = 0;
 
-    // タイムアウトガード（40秒で強制中断 — Vercel 60秒制限に余裕を持たせる）
+    // タイムアウトガード（50秒で強制中断 — Vercel 60秒制限に余裕を持たせる）
     const startTime = Date.now();
-    const TIMEOUT_MS = 40000;
+    const TIMEOUT_MS = 50000;
 
     for (const msgId of messageIds) {
       // タイムアウトチェック
@@ -93,9 +93,9 @@ module.exports = async (req, res) => {
         debugLogs.push({ subject: '⏱️ タイムアウト', status: '⚠️ 残りは次のバッチで処理します', type: '' });
         break;
       }
-      // レート制限防止: Gemini API呼び出し後1秒待機（有料プラン 2000RPM）
+      // レート制限防止: Gemini API呼び出し後500ms待機（有料プラン 2000RPM）
       if (geminiCallCount > 0) {
-        await sleep(1000);
+        await sleep(500);
       }
       try {
         const msg = await googleApi(token,
@@ -582,6 +582,33 @@ async function updateSheet(token, sheetId, makerName, amount, yearMonth) {
   );
   const values = dataRes.values || [['メーカー名']];
 
+  // ===== 列の並び替え（既存データも含めて年月順にソート）=====
+  const header = values[0];
+  if (header.length > 2) {
+    // 年月列のインデックスと値を取得（列0はメーカー名なので除外）
+    const monthCols = [];
+    for (let j = 1; j < header.length; j++) {
+      monthCols.push({ idx: j, label: header[j] });
+    }
+    // 年月を昇順ソート（YYYY/MM形式なので文字列比較でOK）
+    monthCols.sort((a, b) => a.label.localeCompare(b.label));
+    // ソート後の列順が元と異なる場合のみ並び替え
+    const needsSort = monthCols.some((col, i) => col.idx !== i + 1);
+    if (needsSort) {
+      const newValues = values.map(row => {
+        const newRow = [row[0] || ''];
+        for (const col of monthCols) {
+          newRow.push(row[col.idx] || '');
+        }
+        return newRow;
+      });
+      // valuesを更新
+      for (let i = 0; i < values.length; i++) {
+        values[i] = newValues[i];
+      }
+    }
+  }
+
   // メーカー行を検索
   let rowIdx = -1;
   for (let i = 1; i < values.length; i++) {
@@ -596,17 +623,14 @@ async function updateSheet(token, sheetId, makerName, amount, yearMonth) {
 
   // なければ日付順の正しい位置に挿入
   if (colIdx === -1) {
-    // 挿入位置を探す（年月の昇順を維持）
-    let insertAt = values[0].length; // デフォルトは末尾
+    let insertAt = values[0].length;
     for (let j = 1; j < values[0].length; j++) {
       if (values[0][j] > yearMonth) {
         insertAt = j;
         break;
       }
     }
-    // ヘッダー行に挿入
     values[0].splice(insertAt, 0, yearMonth);
-    // 全データ行にも空セルを挿入（列ずれ防止）
     for (let i = 1; i < values.length; i++) {
       while (values[i].length < insertAt) values[i].push('');
       values[i].splice(insertAt, 0, '');
